@@ -16,7 +16,7 @@ namespace GamygdalaNet.Agents
         private readonly Dictionary<string, Goal> _goals;
         private readonly Dictionary<string, Emotion> _internalState; // Trading space for lookup speed.
         private readonly Dictionary<string, PadVector> _mapPad;
-        private readonly string _name;
+
         private Gain _gain;
 
         /// <summary>
@@ -27,7 +27,7 @@ namespace GamygdalaNet.Agents
         /// <param name="gamygdala">The Gamygdala instance used for appraisal and decaying.</param>
         public Agent(string name)
         {
-            _name = name;
+            Name = name;
             _goals = new Dictionary<string, Goal>();
             _currentRelations = new Dictionary<string, Relation>();
             _internalState = new Dictionary<string, Emotion>();
@@ -53,6 +53,8 @@ namespace GamygdalaNet.Agents
                 [EmotionNames.Remorse] = new PadVector(-0.57, 0.28, -0.34) //guilty
             };
         }
+
+        public string Name { get; }
 
         /// <summary>
         ///     Adds a goal to this agent (so this agent becomes an owner of the goal).
@@ -251,6 +253,11 @@ namespace GamygdalaNet.Agents
         {
             _internalState.Decay(gamygdala);
             foreach (var relation in _currentRelations) relation.Value.Decay(gamygdala);
+        }
+
+        public Relation[] GetRelations()
+        {
+            return _currentRelations.Values.ToArray();
         }
     }
 }

@@ -8,7 +8,10 @@ namespace GamygdalaNet
         {
             const double decayFactor = 0.8;
             var decayStrategy = new ExponentialDecayStrategy(decayFactor);
-            var gamygdala = new Gamygdala(decayStrategy);
+            var gamygdala = new Gamygdala(decayStrategy)
+            {
+                PrintDebug = true
+            };
             return gamygdala;
         }
     }

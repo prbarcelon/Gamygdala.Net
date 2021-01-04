@@ -53,5 +53,21 @@ namespace GamygdalaNet.Agents.Data
         public string[] AffectedGoalNames { get; }
         public DoubleNegativeOneToPositiveOneInclusive[] GoalCongruences { get; }
         public bool IsIncremental { get; }
+
+        public override string ToString()
+        {
+            var numberOfGoals = AffectedGoalNames.Length;
+            var goalsAndCongruences = new string[numberOfGoals];
+            for (var i = 0; i < numberOfGoals; i++)
+            {
+                var affectedGoal = $"{AffectedGoalNames[i]}({GoalCongruences[i].Value:0.00})";
+                goalsAndCongruences[i] = affectedGoal;
+            }
+
+            var affectedGoals = string.Join(", ", goalsAndCongruences);
+
+            return
+                $"Belief: {affectedGoals}; likelihood={Likelihood.Value:0.00}, causalAgent={CausalAgentName}, isIncremental={IsIncremental}";
+        }
     }
 }

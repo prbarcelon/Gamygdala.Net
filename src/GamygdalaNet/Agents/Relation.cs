@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using GamygdalaNet.Agents.Data;
 using GamygdalaNet.Types;
 
@@ -29,6 +30,7 @@ namespace GamygdalaNet.Agents
 
         public string TargetAgentName { get; }
         public DoubleNegativeOneToPositiveOneInclusive Like { get; set; }
+        public Emotion[] EmotionsList => _emotions.Values.ToArray();
 
         public void AddEmotion(in Emotion emotion)
         {
@@ -38,6 +40,11 @@ namespace GamygdalaNet.Agents
         public void Decay(Gamygdala gamygdala)
         {
             _emotions.Decay(gamygdala);
+        }
+
+        public override string ToString()
+        {
+            return $"Relation: targetAgent={TargetAgentName}, like={Like.Value:0.00}";
         }
     }
 }
