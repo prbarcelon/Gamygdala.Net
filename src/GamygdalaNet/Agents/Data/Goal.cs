@@ -39,7 +39,7 @@ namespace GamygdalaNet.Agents.Data
 
             Name = name;
             Utility = utility;
-            Likelihood = DefaultLikelihood;
+            Likelihood = double.NaN; // TODO - We need to better track when a goal's likelihood hasn't been calculated yet.
             IsMaintenanceGoal = isMaintenanceGoal;
             CustomLikelihoodCalculation = customLikelihoodCalculation;
 

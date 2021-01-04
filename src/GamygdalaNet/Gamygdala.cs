@@ -396,11 +396,23 @@ namespace GamygdalaNet
         ///     loop. Further, if you want to tweak the emotional intensity decay of individual agents, you should tweak the
         ///     decayFactor per agent not the "frame rate" of the decay (as this doesn't change the rate).
         /// </summary>
-        private void DecayAll()
+        public void DecayAll(long? millisPassed = null)
         {
-            var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            _millisPassed = now - _lastMillis;
-            _lastMillis = now;
+            // TODO - turn into pure function?
+
+            if (millisPassed.HasValue)
+            {
+                // Not in the original code. Hack to get dT for deterministic unit tests. 
+                _millisPassed = millisPassed.Value;
+                _lastMillis = _lastMillis + _millisPassed;
+            }
+            else
+            {
+                var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                _millisPassed = now - _lastMillis;
+                _lastMillis = now;
+            }
+
             foreach (var agent in _agents) agent.Value.Decay(this);
         }
 
@@ -450,7 +462,9 @@ namespace GamygdalaNet
             }
 
             goal.Likelihood = newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.
-            return newLikelihood - oldLikelihood;
+            return double.IsNaN(oldLikelihood)
+                ? newLikelihood
+                : new DoubleNegativeOneToPositiveOneInclusive(newLikelihood - oldLikelihood);
         }
 
         /// <summary>

@@ -25,6 +25,11 @@ namespace GamygdalaNet.Types
         {
             return new DoubleZeroToOneInclusive(x);
         }
+        
+        public static implicit operator DoubleNegativeOneToPositiveOneInclusive(DoubleZeroToOneInclusive x)
+        {
+            return new DoubleNegativeOneToPositiveOneInclusive(x.Value);
+        }
 
         public static DoubleZeroToOneInclusive Clamp(double unclampedValue)
         {

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 using GamygdalaNet.Types;
 
 namespace GamygdalaNet.Agents.Data
@@ -29,7 +30,7 @@ namespace GamygdalaNet.Agents.Data
         {
             // TODO - Parallelize.
             var emotionsToRemove = new Queue<string>();
-            foreach (var emotion in emotions)
+            foreach (var emotion in emotions.ToArray())
             {
                 var newIntensity = gamygdala.DecayFunction(emotion.Value.Intensity);
 

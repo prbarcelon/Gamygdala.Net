@@ -69,5 +69,10 @@ namespace GamygdalaNet.Agents.Data
             return
                 $"Belief: {affectedGoals}; likelihood={Likelihood.Value:0.00}, causalAgent={CausalAgentName}, isIncremental={IsIncremental}";
         }
+
+        public Belief CopyButWithNewLikelihood(DoubleZeroToOneInclusive likelihood)
+        {
+            return new Belief(likelihood, CausalAgentName, AffectedGoalNames, GoalCongruences, IsIncremental);
+        }
     }
 }
