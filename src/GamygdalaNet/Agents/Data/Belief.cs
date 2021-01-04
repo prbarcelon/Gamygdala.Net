@@ -33,7 +33,7 @@ namespace GamygdalaNet.Agents.Data
             DoubleNegativeOneToPositiveOneInclusive[] goalCongruences, bool isIncremental = false)
         {
             if (affectedGoalNames.Length != goalCongruences.Length)
-                throw new ArgumentOutOfRangeException(
+                throw new ArgumentOutOfRangeException(nameof(goalCongruences),
                     $"The lengths of {nameof(affectedGoalNames)} and {nameof(goalCongruences)} must be equal.");
 
             IsIncremental = isIncremental;
