@@ -461,7 +461,19 @@ namespace GamygdalaNet
                 }
             }
 
-            goal.Likelihood = newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.
+            if (Math.Abs(likelihood - 1) < double.Epsilon) // Not in original code but reflective of gamygdala paper.
+            {
+                goal.Likelihood = 1;
+            }
+            else if (likelihood < double.Epsilon) // Not in original code but reflective of gamygdala paper.
+            {
+                goal.Likelihood = 0;
+            }
+            else
+            {
+                goal.Likelihood = newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.    
+            }
+            
             return double.IsNaN(oldLikelihood)
                 ? newLikelihood
                 : new DoubleNegativeOneToPositiveOneInclusive(newLikelihood - oldLikelihood);
