@@ -1,4 +1,5 @@
 ﻿using GamygdalaNet.DecayStrategies;
+using GamygdalaNet.RelationLikeStrategies;
 
 namespace GamygdalaNet
 {
@@ -8,7 +9,8 @@ namespace GamygdalaNet
         {
             const double decayFactor = 0.8;
             var decayStrategy = new ExponentialDecayStrategy(decayFactor);
-            var gamygdala = new Gamygdala(decayStrategy)
+            var additiveRelationLikeStrategy = new AdditiveRelationLikeStrategy();
+            var gamygdala = new Gamygdala(decayStrategy, additiveRelationLikeStrategy)
             {
                 PrintDebug = true
             };

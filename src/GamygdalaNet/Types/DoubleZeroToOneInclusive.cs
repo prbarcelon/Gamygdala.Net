@@ -35,5 +35,10 @@ namespace GamygdalaNet.Types
         {
             return new DoubleZeroToOneInclusive(Math.Min(1, Math.Max(0, unclampedValue)));
         }
+        
+        public override string ToString()
+        {
+            return Value.ToString("0.00");
+        }
     }
 }

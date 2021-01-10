@@ -24,5 +24,15 @@ namespace GamygdalaNet.Types
         {
             return new DoubleNegativeOneToPositiveOneInclusive(x);
         }
+        
+        public static DoubleNegativeOneToPositiveOneInclusive Clamp(double unclampedValue)
+        {
+            return new DoubleNegativeOneToPositiveOneInclusive(Math.Min(1, Math.Max(-1, unclampedValue)));
+        }
+
+        public override string ToString()
+        {
+            return Value.ToString("0.00");
+        }
     }
 }

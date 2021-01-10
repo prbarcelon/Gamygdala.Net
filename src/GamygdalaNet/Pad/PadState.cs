@@ -16,5 +16,10 @@ namespace GamygdalaNet.Pad
         public DoubleNegativeOneToPositiveOneInclusive Pleasure { get; }
         public DoubleNegativeOneToPositiveOneInclusive Arousal { get; }
         public DoubleNegativeOneToPositiveOneInclusive Dominance { get; }
+
+        public override string ToString()
+        {
+            return $"PAD State: p={Pleasure.ToString()}, a={Arousal.ToString()}, d={Dominance.ToString()}";
+        }
     }
 }

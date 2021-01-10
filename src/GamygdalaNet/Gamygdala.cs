@@ -6,6 +6,7 @@ using System.Text;
 using GamygdalaNet.Agents;
 using GamygdalaNet.Agents.Data;
 using GamygdalaNet.DecayStrategies;
+using GamygdalaNet.RelationLikeStrategies;
 using GamygdalaNet.Types;
 
 namespace GamygdalaNet
@@ -79,17 +80,20 @@ namespace GamygdalaNet
         private readonly Dictionary<string, Agent> _agents;
         private readonly IDecayStrategy _decayStrategy;
         private readonly Dictionary<string, Goal> _goals;
+        private readonly IRelationLikeStrategy _relationLikeStrategy;
         private long _lastMillis;
         private long _millisPassed;
 
         /// <summary>
         /// </summary>
         /// <param name="decayStrategy"></param>
-        public Gamygdala(IDecayStrategy decayStrategy)
+        /// <param name="relationLikeStrategy"></param>
+        public Gamygdala(IDecayStrategy decayStrategy, IRelationLikeStrategy relationLikeStrategy)
         {
             _agents = new Dictionary<string, Agent>();
             _goals = new Dictionary<string, Goal>();
             _decayStrategy = decayStrategy;
+            _relationLikeStrategy = relationLikeStrategy;
             _lastMillis = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             _millisPassed = 0L;
         }
@@ -462,18 +466,13 @@ namespace GamygdalaNet
             }
 
             if (Math.Abs(likelihood - 1) < double.Epsilon) // Not in original code but reflective of gamygdala paper.
-            {
                 goal.Likelihood = 1;
-            }
             else if (likelihood < double.Epsilon) // Not in original code but reflective of gamygdala paper.
-            {
                 goal.Likelihood = 0;
-            }
             else
-            {
-                goal.Likelihood = newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.    
-            }
-            
+                goal.Likelihood =
+                    newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.    
+
             return double.IsNaN(oldLikelihood)
                 ? newLikelihood
                 : new DoubleNegativeOneToPositiveOneInclusive(newLikelihood - oldLikelihood);
@@ -577,7 +576,7 @@ namespace GamygdalaNet
 
             var emotion = new Emotion(emotionName, intensity);
             relation.AddEmotion(emotion);
-            agent.UpdateEmotionalState(emotion); // Also add relation emotion the emotion to the emotional state.
+            agent.UpdateEmotionalState(emotion); // Also add relation emotion to the emotional state.
         }
 
         private void AgentActions(string affectedAgentName, string causalAgentName, string selfName,
@@ -605,8 +604,7 @@ namespace GamygdalaNet
                 var intensity = Math.Abs(utility * deltaLikelihood);
                 var self = _agents[selfName]; // TODO - possible error here if selfName doesn't exist.
 
-                if (!self.HasRelationWith(causalAgentName))
-                    self.UpdateRelation(causalAgentName, 0);
+                _relationLikeStrategy.UpdateRelation(self, causalAgentName, desirability);
 
                 if (!self.TryGetRelation(causalAgentName, out var relation))
                     throw new InvalidOperationException(); // This should never happen.

@@ -12,10 +12,29 @@ namespace GamygdalaNet.Agents
     /// </summary>
     public class Agent
     {
+        private static readonly Dictionary<string, PadVector> MapPad = new Dictionary<string, PadVector>
+        {
+            [EmotionNames.Distress] = new PadVector(-0.61, 0.28, -0.36),
+            [EmotionNames.Fear] = new PadVector(-0.64, 0.6, -0.43),
+            [EmotionNames.Hope] = new PadVector(0.51, 0.23, 0.14),
+            [EmotionNames.Joy] = new PadVector(0.76, .48, 0.35),
+            [EmotionNames.Satisfaction] = new PadVector(0.87, 0.2, 0.62),
+            [EmotionNames.FearConfirmed] = new PadVector(-0.61, 0.06, -0.32), //defeated
+            [EmotionNames.Disappointment] = new PadVector(-0.61, -0.15, -0.29),
+            [EmotionNames.Relief] = new PadVector(0.29, -0.19, -0.28),
+            [EmotionNames.HappyFor] = new PadVector(0.64, 0.35, 0.25),
+            [EmotionNames.Resentment] = new PadVector(-0.35, 0.35, 0.29),
+            [EmotionNames.Pity] = new PadVector(-0.52, 0.02, -0.21), //regretful
+            [EmotionNames.Gloating] = new PadVector(-0.45, 0.48, 0.42), //cruel
+            [EmotionNames.Gratitude] = new PadVector(0.64, 0.16, -0.21), //grateful
+            [EmotionNames.Anger] = new PadVector(-0.51, 0.59, 0.25),
+            [EmotionNames.Gratification] = new PadVector(0.69, 0.57, 0.63), //triumphant
+            [EmotionNames.Remorse] = new PadVector(-0.57, 0.28, -0.34) //guilty
+        };
+
         private readonly Dictionary<string, Relation> _currentRelations;
         private readonly Dictionary<string, Goal> _goals;
         private readonly Dictionary<string, Emotion> _internalState; // Trading space for lookup speed.
-        private readonly Dictionary<string, PadVector> _mapPad;
 
         private Gain _gain;
 
@@ -23,8 +42,6 @@ namespace GamygdalaNet.Agents
         ///     The emotion agent class taking care of emotion management for one entity.
         /// </summary>
         /// <param name="name">The name of the agent to be created. This name is used as ref throughout the appraisal engine.</param>
-        /// ///
-        /// <param name="gamygdala">The Gamygdala instance used for appraisal and decaying.</param>
         public Agent(string name)
         {
             Name = name;
@@ -32,26 +49,6 @@ namespace GamygdalaNet.Agents
             _currentRelations = new Dictionary<string, Relation>();
             _internalState = new Dictionary<string, Emotion>();
             _gain = 1.0;
-
-            _mapPad = new Dictionary<string, PadVector>
-            {
-                [EmotionNames.Distress] = new PadVector(-0.61, 0.28, -0.36),
-                [EmotionNames.Fear] = new PadVector(-0.64, 0.6, -0.43),
-                [EmotionNames.Hope] = new PadVector(0.51, 0.23, 0.14),
-                [EmotionNames.Joy] = new PadVector(0.76, .48, 0.35),
-                [EmotionNames.Satisfaction] = new PadVector(0.87, 0.2, 0.62),
-                [EmotionNames.FearConfirmed] = new PadVector(-0.61, 0.06, -0.32), //defeated
-                [EmotionNames.Disappointment] = new PadVector(-0.61, -0.15, -0.29),
-                [EmotionNames.Relief] = new PadVector(0.29, -0.19, -0.28),
-                [EmotionNames.HappyFor] = new PadVector(0.64, 0.35, 0.25),
-                [EmotionNames.Resentment] = new PadVector(-0.35, 0.35, 0.29),
-                [EmotionNames.Pity] = new PadVector(-0.52, 0.02, -0.21), //regretful
-                [EmotionNames.Gloating] = new PadVector(-0.45, 0.48, 0.42), //cruel
-                [EmotionNames.Gratitude] = new PadVector(0.64, 0.16, -0.21), //grateful
-                [EmotionNames.Anger] = new PadVector(-0.51, 0.59, 0.25),
-                [EmotionNames.Gratification] = new PadVector(0.69, 0.57, 0.63), //triumphant
-                [EmotionNames.Remorse] = new PadVector(-0.57, 0.28, -0.34) //guilty
-            };
         }
 
         public string Name { get; }
@@ -174,9 +171,9 @@ namespace GamygdalaNet.Agents
 
             foreach (var emotion in _internalState)
             {
-                pleasure += emotion.Value.Intensity * _mapPad[emotion.Key].Pleasure;
-                arousal += emotion.Value.Intensity * _mapPad[emotion.Key].Arousal;
-                dominance += emotion.Value.Intensity * _mapPad[emotion.Key].Dominance;
+                pleasure += emotion.Value.Intensity * MapPad[emotion.Key].Pleasure;
+                arousal += emotion.Value.Intensity * MapPad[emotion.Key].Arousal;
+                dominance += emotion.Value.Intensity * MapPad[emotion.Key].Dominance;
             }
 
             if (useGain)
@@ -203,12 +200,24 @@ namespace GamygdalaNet.Agents
         /// </summary>
         /// <param name="targetAgentName">The agent who is the target of the relation.</param>
         /// <param name="like">The relation, or how much the target agent is liked, from -1 (disliked) to 1 (liked).</param>
-        public void UpdateRelation(string targetAgentName, DoubleNegativeOneToPositiveOneInclusive like)
+        /// <param name="isLikeAdditive">If true, <see cref="like" /> is added to the existing relation's like value.</param>
+        public void UpdateRelation(string targetAgentName, DoubleNegativeOneToPositiveOneInclusive like,
+            bool isLikeAdditive = false)
         {
             if (!HasRelationWith(targetAgentName))
+            {
                 _currentRelations[targetAgentName] = new Relation(targetAgentName, like);
+            }
             else
-                _currentRelations[targetAgentName].Like = like;
+            {
+                // Not in original code but reflective of gamygdala paper.
+                // We want to either change like over time or set it to a static value.
+                var initialLike = _currentRelations[targetAgentName].Like;
+                var finalLike = isLikeAdditive
+                    ? DoubleNegativeOneToPositiveOneInclusive.Clamp(initialLike + like)
+                    : like;
+                _currentRelations[targetAgentName].Like = finalLike;
+            }
         }
 
         /// <summary>

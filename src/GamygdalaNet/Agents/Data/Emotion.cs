@@ -34,5 +34,10 @@ namespace GamygdalaNet.Agents.Data
         {
             return new Emotion(Name, Intensity);
         }
+
+        public override string ToString()
+        {
+            return $"Emotion: {Name}={Intensity.Value:0.00}";
+        }
     }
 }

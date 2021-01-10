@@ -31,7 +31,7 @@ namespace GamygdalaNet.Agents.Data
         ///     If provided, gamygdala uses this function for calculating the goal likelihood instead of calculating the goal
         ///     likelihood from beliefs (game events).
         /// </param>
-        public Goal(string name, DoubleNegativeOneToPositiveOneInclusive utility, bool isMaintenanceGoal,
+        public Goal(string name, DoubleNegativeOneToPositiveOneInclusive utility, bool isMaintenanceGoal = false,
             Func<DoubleZeroToOneInclusive> customLikelihoodCalculation = null)
         {
             if (string.IsNullOrEmpty(name))
@@ -39,7 +39,8 @@ namespace GamygdalaNet.Agents.Data
 
             Name = name;
             Utility = utility;
-            Likelihood = double.NaN; // TODO - We need to better track when a goal's likelihood hasn't been calculated yet.
+            Likelihood =
+                double.NaN; // TODO - We need to better track when a goal's likelihood hasn't been calculated yet.
             IsMaintenanceGoal = isMaintenanceGoal;
             CustomLikelihoodCalculation = customLikelihoodCalculation;
 
@@ -74,6 +75,12 @@ namespace GamygdalaNet.Agents.Data
         public override int GetHashCode()
         {
             return Name.GetHashCode();
+        }
+
+        public override string ToString()
+        {
+            return
+                $"Goal: name={Name}, likelihood={Likelihood.Value:0.00}, utility={Utility.Value:0.00}, isMaintenance={IsMaintenanceGoal}";
         }
     }
 }
