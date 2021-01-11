@@ -1,1 +1,2 @@
-# Gamygdala.Net
+# Gamygdala C# Port
+Port of [Gamygdala](https://github.com/broekens/gamygdala) from JavaScript to C# with inspiration from the [Gamygdala Java Port](https://github.com/tygron-virtual-humans/port-gamygdala).
