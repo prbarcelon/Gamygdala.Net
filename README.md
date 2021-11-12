@@ -1,4 +1,6 @@
 # Gamygdala C# Port
+GAMYGDALA is an emotional appraisal engine that enables game developers to easily add emotions to their Non-Player Characters (NPC).
+
 Port of [Gamygdala](https://github.com/broekens/gamygdala) from JavaScript to C# with inspiration from the [Gamygdala Java Port](https://github.com/tygron-virtual-humans/port-gamygdala).
 
 ## Publication Links
