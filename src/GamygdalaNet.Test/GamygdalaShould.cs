@@ -158,7 +158,7 @@ namespace GamygdalaNet.Test
 
             var npcAgent = new Agent("npc");
             var dieGoal = new Goal("die", -1);
-            var winGoal = new Goal("win", 1) {Likelihood = 0.1875};
+            var winGoal = new Goal("win", 1);
             const double health = 0.3; // Health as percentage of max hit points.
             const double dyingLikelihood = 1.0 - health;
             var woundedBelief = new Belief(dyingLikelihood, npcAgent.Name, new[] {dieGoal.Name},
@@ -171,6 +171,7 @@ namespace GamygdalaNet.Test
             _gamygdala.RegisterGoal(winGoal);
             npcAgent.AddGoal(dieGoal);
             npcAgent.AddGoal(winGoal);
+            npcAgent.SetGoalLikelihood(winGoal.Name, 0.1875);
             _gamygdala.Appraise(woundedBelief);
             var initialEmotions = npcAgent.GetEmotionalState();
             initialEmotions.Length.Should().Be(1);

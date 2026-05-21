@@ -34,6 +34,7 @@ namespace GamygdalaNet.Agents
 
         private readonly Dictionary<string, Relation> _currentRelations;
         private readonly Dictionary<string, Goal> _goals;
+        private readonly Dictionary<string, double> _goalLikelihoods;
         private readonly Dictionary<string, Emotion> _internalState; // Trading space for lookup speed.
 
         private Gain _gain;
@@ -46,6 +47,7 @@ namespace GamygdalaNet.Agents
         {
             Name = name;
             _goals = new Dictionary<string, Goal>();
+            _goalLikelihoods = new Dictionary<string, double>();
             _currentRelations = new Dictionary<string, Relation>();
             _internalState = new Dictionary<string, Emotion>();
             _gain = 1.0;
@@ -102,6 +104,74 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
+        ///     Looks up the agent's per-name <see cref="Goal" /> definition.
+        ///     Used by <see cref="Gamygdala.Appraise(Belief, Agent)" /> to
+        ///     read the agent's private goal template before consulting
+        ///     <see cref="GetGoalLikelihood" /> for the current state.
+        /// </summary>
+        public bool TryGetGoal(string goalName, out Goal goal)
+        {
+            return _goals.TryGetValue(goalName, out goal);
+        }
+
+        /// <summary>
+        ///     Looks up the agent's recorded likelihood for the named
+        ///     goal. Returns false when the agent has not yet
+        ///     appraised any belief against this goal; per Popescu
+        ///     §3.2 line 184 the initial value is "Unknown" rather
+        ///     than a numeric prior, and the engine's first-appraisal
+        ///     delta calculation routes through a different branch
+        ///     when no prior is recorded (returning the
+        ///     post-appraisal likelihood as the delta directly, which
+        ///     matches the magnitudes Popescu pins in Listings 2-4).
+        ///     Existence-based check via the underlying dictionary's
+        ///     ContainsKey; no NaN sentinels.
+        /// </summary>
+        public bool TryGetGoalLikelihood(string goalName, out DoubleZeroToOneInclusive likelihood)
+        {
+            if (string.IsNullOrEmpty(goalName))
+                throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
+
+            if (_goalLikelihoods.TryGetValue(goalName, out var value))
+            {
+                likelihood = new DoubleZeroToOneInclusive(value);
+                return true;
+            }
+
+            likelihood = new DoubleZeroToOneInclusive(0);
+            return false;
+        }
+
+        /// <summary>
+        ///     Records the agent's current likelihood for the named
+        ///     goal. Called by
+        ///     <see cref="Gamygdala.Appraise(Belief, Agent)" /> after
+        ///     calculating the per-belief delta. After this call
+        ///     <see cref="HasGoalLikelihood" /> returns true and
+        ///     <see cref="TryGetGoalLikelihood" /> recovers the
+        ///     stored value.
+        /// </summary>
+        public void SetGoalLikelihood(string goalName, DoubleZeroToOneInclusive likelihood)
+        {
+            if (string.IsNullOrEmpty(goalName))
+                throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
+
+            _goalLikelihoods[goalName] = likelihood;
+        }
+
+        /// <summary>
+        ///     True when the agent has recorded any likelihood for
+        ///     the named goal. Distinguishes "never appraised"
+        ///     (returns false) from "appraised, current value happens
+        ///     to be 0.5" (returns true). Existence-based via the
+        ///     underlying dictionary; no NaN sentinels.
+        /// </summary>
+        public bool HasGoalLikelihood(string goalName)
+        {
+            return _goalLikelihoods.ContainsKey(goalName);
+        }
+
+        /// <summary>
         ///     Sets the gain for this agent.
         /// </summary>
         /// <param name="gain">The gain value, from 0 to 20 inclusive.</param>
@@ -154,36 +224,57 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
-        ///     This function returns a summation-based Pleasure Arousal Dominance mapping of the emotional state as is
-        ///     (gain=false), or a PAD mapping based on a gained limiter (limited between 0 and 1), of which the gain can be set by
-        ///     using <see cref="SetGain" />. It sums over all emotions the equivalent PAD values of each emotion (i.e.,
-        ///     [P,A,D]=SUM(Emotion_i([P,A,D]))), which is then gained or not. A high gain factor works well when appraisals are
-        ///     small and rare, and you want to see the effect of these appraisals. A low gain factor (close to 0 but in any case
-        ///     below 1) works well for high frequency and/or large appraisals, so that the effect of these is dampened.
+        ///     Computes the Pleasure-Arousal-Dominance mapping of the
+        ///     agent's emotional state via Reilly's logarithmic
+        ///     aggregator (equation 5 from Popescu, Broekens, van
+        ///     Someren, "GAMYGDALA: An Emotion Engine for Games"):
+        ///     <code>PAD ← 0.1 × log₂(Σ_e 2^(10 × PAD(e) × intensity(e)))</code>
+        ///     Linear for small values and less additive as values
+        ///     grow, "at least as intense as the most intense
+        ///     component" without strict summation. The paper picks
+        ///     this over sigmoid normalization specifically because
+        ///     sigmoid distorts small values. A defensive clamp to
+        ///     <c>[-1, +1]</c> protects against the rare case of
+        ///     multiple high-intensity same-polarity emotions
+        ///     stacking past the natural range (log-sum-exp can
+        ///     mildly exceed max contributor by up to log₂(N)/10).
+        ///     The optional <paramref name="useGain" /> applies the
+        ///     classical Gamygdala gain compression on top, useful
+        ///     when the consumer wants additional dampening for
+        ///     high-frequency appraisal scenarios.
         /// </summary>
-        /// <param name="useGain">Whether to use the gain function or not.</param>
+        /// <param name="useGain">Whether to apply the optional gain function on top of the log-sum-exp aggregation.</param>
         /// <returns>The calculated PAD state.</returns>
         public PadState GetPadState(bool useGain = false)
         {
-            var pleasure = 0.0;
-            var arousal = 0.0;
-            var dominance = 0.0;
+            if (_internalState.Count == 0) return new PadState(0.0, 0.0, 0.0);
 
+            var sumPleasure = 0.0;
+            var sumArousal = 0.0;
+            var sumDominance = 0.0;
             foreach (var emotion in _internalState)
             {
-                pleasure += emotion.Value.Intensity * MapPad[emotion.Key].Pleasure;
-                arousal += emotion.Value.Intensity * MapPad[emotion.Key].Arousal;
-                dominance += emotion.Value.Intensity * MapPad[emotion.Key].Dominance;
+                var intensity = emotion.Value.Intensity.Value;
+                var pad = MapPad[emotion.Key];
+                sumPleasure += System.Math.Pow(2.0, 10.0 * pad.Pleasure * intensity);
+                sumArousal += System.Math.Pow(2.0, 10.0 * pad.Arousal * intensity);
+                sumDominance += System.Math.Pow(2.0, 10.0 * pad.Dominance * intensity);
             }
+
+            // Equation 5 outer transform. Empty pool guarded above so
+            // the log argument is always positive. Math.Log(x, 2.0)
+            // is the netstandard2.0-compatible spelling of log2.
+            var pleasure = 0.1 * System.Math.Log(sumPleasure, 2.0);
+            var arousal = 0.1 * System.Math.Log(sumArousal, 2.0);
+            var dominance = 0.1 * System.Math.Log(sumDominance, 2.0);
 
             if (useGain)
             {
                 double ApplyGain(double value)
                 {
-                    var result = value > 0
+                    return value > 0
                         ? _gain * value / (_gain * value + 1)
                         : -_gain * value / (_gain * value - 1);
-                    return result;
                 }
 
                 pleasure = ApplyGain(pleasure);
@@ -191,7 +282,22 @@ namespace GamygdalaNet.Agents
                 dominance = ApplyGain(dominance);
             }
 
-            return new PadState(pleasure, arousal, dominance);
+            // PadState's domain type rejects values outside [-1, +1];
+            // clamp here so the natural log-sum-exp overshoot from
+            // multiple high-intensity contributors doesn't throw on
+            // construction.
+            return new PadState(
+                Clamp(pleasure),
+                Clamp(arousal),
+                Clamp(dominance));
+        }
+
+        private static double Clamp(double value)
+        {
+            // Math.Clamp is .NET Standard 2.1+; this method targets 2.0.
+            if (value < -1.0) return -1.0;
+            if (value > 1.0) return 1.0;
+            return value;
         }
 
         /// <summary>
