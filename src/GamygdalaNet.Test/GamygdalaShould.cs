@@ -1,3 +1,4 @@
+using System.Linq;
 using FluentAssertions;
 using GamygdalaNet.Agents;
 using GamygdalaNet.Agents.Data;
@@ -35,7 +36,7 @@ namespace GamygdalaNet.Test
         }
 
         /// <summary>
-        ///     Scenario taken from Listing 2 of gamygdala paper.
+        ///     Scenario taken from Listing 1 of the gamygdala paper.
         /// </summary>
         [Fact]
         public void CalculateExpectedInternalStateOfGivenAgent_WhenGivenReliefScenario()
@@ -52,7 +53,7 @@ namespace GamygdalaNet.Test
             const double finalVillageSurroundedBeliefLikelihood = 0;
             var villageSurroundedBelief = new Belief(initialVillageSurroundedBeliefLikelihood, causalAgent,
                 new[] {goalName},
-                new DoubleNegativeOneToPositiveOneInclusive[] {beliefCongruenceWithGoal});
+                new GoalCongruence[] {beliefCongruenceWithGoal});
             var updatedVillageSurroundedBelief =
                 villageSurroundedBelief.CopyButWithNewLikelihood(finalVillageSurroundedBeliefLikelihood);
             const double expectedInitialFearIntensityValue = 0.72;
@@ -94,11 +95,11 @@ namespace GamygdalaNet.Test
             var toLiveGoal = new Goal("to live", 0.7);
             var villageDestroyedGoal = new Goal("village destroyed", -1);
             var villageProvidesHouseBelief = new Belief(1, villageAgent.Name, new[] {toLiveGoal.Name},
-                new DoubleNegativeOneToPositiveOneInclusive[] {1});
+                new GoalCongruence[] {1});
             var villageIsUnarmedBelief = new Belief(0.7, null, new[] {villageDestroyedGoal.Name},
-                new DoubleNegativeOneToPositiveOneInclusive[] {1});
+                new GoalCongruence[] {1});
             var blacksmithProvideWeaponsBelief = new Belief(1, blacksmithAgent.Name, new[] {villageDestroyedGoal.Name},
-                new DoubleNegativeOneToPositiveOneInclusive[] {-1});
+                new GoalCongruence[] {-1});
 
             // Village provides blacksmith a place to live, so blacksmith likes village.
             _gamygdala.RegisterAgent(villageAgent);
@@ -162,9 +163,9 @@ namespace GamygdalaNet.Test
             const double health = 0.3; // Health as percentage of max hit points.
             const double dyingLikelihood = 1.0 - health;
             var woundedBelief = new Belief(dyingLikelihood, npcAgent.Name, new[] {dieGoal.Name},
-                new DoubleNegativeOneToPositiveOneInclusive[] {1});
+                new GoalCongruence[] {1});
             var enemyBuildingsDownBelief = new Belief(0.5, null, new[] {winGoal.Name},
-                new DoubleNegativeOneToPositiveOneInclusive[] {1});
+                new GoalCongruence[] {1});
 
             _gamygdala.RegisterAgent(npcAgent);
             _gamygdala.RegisterGoal(dieGoal);
@@ -183,6 +184,304 @@ namespace GamygdalaNet.Test
             finalEmotions.Length.Should().Be(2);
             finalEmotions[0].ShouldBe(EmotionNames.Fear, 0.69, precision);
             finalEmotions[1].ShouldBe(EmotionNames.Hope, 0.56, precision);
+        }
+
+        /// <summary>
+        ///     Pins the Disappointment quadrant of EvaluateInternalEmotion:
+        ///     belief.likelihood == 0 with utility >= 0 and |delta| &lt; 0.5
+        ///     fires Disappointment + Distress. Counterpart to the
+        ///     Listing 1 Relief quadrant which exercises utility &lt; 0.
+        /// </summary>
+        [Fact]
+        public void CalculateExpectedDisappointmentAndDistress_WhenPositiveUtilityGoalIsDisconfirmed()
+        {
+            const double precision = 1e-2;
+            const string agentName = "hopeful";
+            const string goalName = "win the lottery";
+            const double goalUtility = 0.8;
+            const double priorLikelihood = 0.9;
+            const double beliefLikelihood = 0.0;
+            const double beliefCongruence = 1.0;
+            // Per equation 2: newLikelihood unsnapped = (1*0+1)/2 = 0.5.
+            // delta = 0.5 - 0.9 = -0.4 (|delta| < 0.5 fires Disappointment).
+            // intensity = |0.8 * -0.4| = 0.32.
+            const double expectedIntensity = 0.32;
+
+            var agent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, goalUtility);
+            agent.SetGoalLikelihood(goalName, priorLikelihood);
+
+            var belief = new Belief(beliefLikelihood, null, new[] { goalName },
+                new GoalCongruence[] { beliefCongruence });
+            _gamygdala.Appraise(belief);
+
+            var emotions = agent.GetEmotionalState();
+            emotions.Length.Should().Be(2);
+            emotions[0].ShouldBe(EmotionNames.Disappointment, expectedIntensity, precision);
+            emotions[1].ShouldBe(EmotionNames.Distress, expectedIntensity, precision);
+        }
+
+        /// <summary>
+        ///     Covers AgentActions Case 3 (affected=other, causal=self,
+        ///     relation.Like &gt;= 0, desirability &lt; 0): the causal
+        ///     agent feels Remorse. Companion to Listing 3, which
+        ///     exercises the desirability &gt;= 0 sibling (Gratification).
+        /// </summary>
+        [Fact]
+        public void CalculateExpectedRemorse_WhenCausalAgentHarmsLikedAgentsGoal()
+        {
+            const double precision = 1e-2;
+            // Knight likes the village; knight causes a belief that harms
+            // the village's positive-utility goal. Case 3 fires Remorse on
+            // knight (the causal agent) toward village.
+            var villageAgent = new Agent("village");
+            var knightAgent = new Agent("knight");
+            var stayAliveGoal = new Goal("stay alive", 1);
+
+            _gamygdala.RegisterAgent(villageAgent);
+            _gamygdala.RegisterAgent(knightAgent);
+            _gamygdala.RegisterGoal(stayAliveGoal);
+            villageAgent.AddGoal(stayAliveGoal);
+            villageAgent.SetGoalLikelihood(stayAliveGoal.Name, 0.85);
+            _gamygdala.CreateRelation(knightAgent.Name, villageAgent.Name, 1);
+
+            // Knight believes its action disconfirms the village's stay-alive goal.
+            // newLikelihood unsnapped = (-1*0.5+1)/2 = 0.25; delta = 0.25 - 0.85 = -0.6.
+            // desirability = -0.6 * 1 = -0.6 (Case 3: like >= 0 && desirability < 0 → Remorse).
+            // intensity = |1 * -0.6 * 1| = 0.6.
+            var harmfulBelief = new Belief(0.5, knightAgent.Name, new[] { stayAliveGoal.Name },
+                new GoalCongruence[] { -1 });
+            _gamygdala.Appraise(harmfulBelief);
+
+            var knightEmotions = knightAgent.GetEmotionalState();
+            knightEmotions.Should().ContainSingle(e => e.Name == EmotionNames.Remorse)
+                .Which.Intensity.Value.Should().BeApproximately(0.6, precision);
+        }
+
+        /// <summary>
+        ///     Covers the four corners of the saturation snap (Popescu
+        ///     §3.4.2 + Listings 1, 3). When the belief is at certainty
+        ///     (likelihood == 0 or 1) the STORED goal likelihood
+        ///     saturates to whichever boundary the congruence sign
+        ///     points at. Snapping on belief.likelihood alone (without
+        ///     considering congruence) would store the wrong boundary
+        ///     when a certain-but-blocking belief disconfirms a goal.
+        /// </summary>
+        [Theory]
+        [InlineData(1.0, 1.0, 1.0)]   // certain-happening + facilitating  → goal achieves (1)
+        [InlineData(1.0, -1.0, 0.0)]  // certain-happening + blocking      → goal disconfirmed (0)
+        [InlineData(0.0, 1.0, 0.0)]   // certain-not-happening + facilitating → goal disconfirmed (0)
+        [InlineData(0.0, -1.0, 1.0)]  // certain-not-happening + blocking    → goal achieves (1)
+        [InlineData(1.0, 0.0, 0.5)]   // certain belief but congruence == 0 → no snap (equation 2's 0.5)
+        [InlineData(0.0, 0.0, 0.5)]   // certain-not-happening + congruence == 0 → no snap
+        public void SnapStoredGoalLikelihoodToTheBoundaryConsistentWithCongruence(
+            double beliefLikelihood, double congruence, double expectedStoredLikelihood)
+        {
+            const string agentName = "agent";
+            const string goalName = "saturation goal";
+            var agent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, 1);
+
+            var certainBelief = new Belief(beliefLikelihood, null, new[] { goalName },
+                new GoalCongruence[] { congruence });
+            _gamygdala.Appraise(certainBelief, agent);
+
+            agent.TryGetGoalLikelihood(goalName, out var stored).Should().BeTrue();
+            stored.Value.Should().BeApproximately(expectedStoredLikelihood, 1e-9);
+        }
+
+        /// <summary>
+        ///     Achievement goals settle at either boundary. Once an
+        ///     achievement goal's stored likelihood reaches 0 or 1,
+        ///     subsequent beliefs do not move it. Maintenance goals
+        ///     are exempt. The paper's §3.2 distinction uses signed
+        ///     likelihood; this port's [0, 1] domain maps the failure
+        ///     boundary to 0 and the achievement boundary to 1.
+        /// </summary>
+        [Fact]
+        public void NotMoveAchievementGoalAfterReachingDisconfirmedBoundary()
+        {
+            const string agentName = "agent";
+            const string goalName = "shield holds";
+            var agent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, 1);
+            // Drive the goal to the disconfirmed boundary (0) via a
+            // certain-blocking belief.
+            var disconfirmingBelief = new Belief(1, null, new[] { goalName },
+                new GoalCongruence[] { -1 });
+            _gamygdala.Appraise(disconfirmingBelief, agent);
+            agent.TryGetGoalLikelihood(goalName, out var afterFirst).Should().BeTrue();
+            afterFirst.Value.Should().BeApproximately(0, 1e-9);
+
+            // A subsequent facilitating belief must NOT move the goal:
+            // achievement goals settle at the boundary.
+            var recoveringBelief = new Belief(0.8, null, new[] { goalName },
+                new GoalCongruence[] { 1 });
+            _gamygdala.Appraise(recoveringBelief, agent);
+            agent.TryGetGoalLikelihood(goalName, out var afterSecond).Should().BeTrue();
+            afterSecond.Value.Should().BeApproximately(0, 1e-9);
+        }
+
+        /// <summary>
+        ///     A goal with a custom likelihood calculation overrides
+        ///     equation 2. The certainty-snap must also be suppressed:
+        ///     a custom calc that returns 0.5 against a certain
+        ///     facilitating belief must store 0.5, not snap to 1. The
+        ///     API exists to let callers fully replace equation 2; the
+        ///     snap subverting that defeats the purpose.
+        /// </summary>
+        [Fact]
+        public void NotSnapStoredGoalLikelihood_WhenGoalHasCustomLikelihoodCalculation()
+        {
+            const string agentName = "agent";
+            const string goalName = "custom goal";
+            // Custom calc returns 0.5 unconditionally. A certain
+            // facilitating belief would normally snap stored to 1; the
+            // exemption preserves the custom calc's return value.
+            var customGoal = new Goal(goalName, 1, customLikelihoodCalculation: () => new Likelihood(0.5));
+            _gamygdala.RegisterGoal(customGoal);
+            var agent = _gamygdala.CreateAgent(agentName);
+            agent.AddGoal(customGoal);
+
+            var certainFacilitatingBelief = new Belief(1, null, new[] { goalName },
+                new GoalCongruence[] { 1 });
+            _gamygdala.Appraise(certainFacilitatingBelief, agent);
+
+            agent.TryGetGoalLikelihood(goalName, out var stored).Should().BeTrue();
+            stored.Value.Should().BeApproximately(0.5, 1e-9);
+        }
+
+        /// <summary>
+        ///     Per Popescu §3.4.6 the NPC's emotional state decays
+        ///     toward a default ("personality-derived") state rather
+        ///     than toward zero. The substrate accepts per-emotion
+        ///     defaults via <see cref="Agent.SetDefaultEmotionIntensity" />.
+        ///     A freshly-set default seeds the agent's emotional state
+        ///     so the value is read back immediately.
+        /// </summary>
+        [Fact]
+        public void SeedDefaultEmotionIntensityIntoEmotionalState_WhenSetBeforeAnyAppraisal()
+        {
+            var agent = _gamygdala.CreateAgent("baseline-anxious");
+            agent.SetDefaultEmotionIntensity(EmotionNames.Fear, 0.2);
+
+            var emotions = agent.GetEmotionalState();
+            emotions.Should().ContainSingle(e => e.Name == EmotionNames.Fear)
+                .Which.Intensity.Value.Should().BeApproximately(0.2, 1e-9);
+        }
+
+        /// <summary>
+        ///     Decay interpolates toward each emotion's default rather
+        ///     than toward zero. An appraisal that bumps an emotion
+        ///     above its default gradually returns to the default
+        ///     under repeated decay; the default acts as a floor for
+        ///     positive-valence emotions (Popescu §3.4.6).
+        /// </summary>
+        [Fact]
+        public void DecayEmotionTowardItsDefaultIntensityRatherThanZero()
+        {
+            const string agentName = "optimist";
+            const string goalName = "succeed";
+            const double precision = 1e-2;
+
+            var agent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, 1);
+            agent.SetDefaultEmotionIntensity(EmotionNames.Joy, 0.2);
+
+            // Bump Joy above its default with an appraisal.
+            var goodNews = new Belief(1, null, new[] { goalName }, new GoalCongruence[] { 1 });
+            _gamygdala.Appraise(goodNews, agent);
+            var joyAfterAppraisal = agent.GetEmotionalState()
+                .Single(e => e.Name == EmotionNames.Joy).Intensity.Value;
+            joyAfterAppraisal.Should().BeGreaterThan(0.2);
+
+            // Decay over time: Joy gravitates toward 0.2, not toward zero.
+            for (var step = 0; step < 30; step++)
+                _gamygdala.DecayAll(3000);
+
+            var joyAfterLongDecay = agent.GetEmotionalState()
+                .Single(e => e.Name == EmotionNames.Joy).Intensity.Value;
+            joyAfterLongDecay.Should().BeApproximately(0.2, precision);
+        }
+
+        /// <summary>
+        ///     Covers the goal-owner side of Listing 3 step 3 (provide
+        ///     weapons). The blacksmith disconfirms the village's
+        ///     "village destroyed" goal; the village feels Relief and
+        ///     Joy at 0.85 each. Paper §4.2 calls this out: "if we
+        ///     were to model the village with its own emotional brain
+        ///     ... at the end Relief, Joy, and Gratitude towards the
+        ///     blacksmith." Pins the saturation-snap fix that stores
+        ///     the village's goal likelihood at 0 (disconfirmed)
+        ///     rather than at 1 (the prior code path's bug).
+        /// </summary>
+        [Fact]
+        public void CalculateExpectedReliefOnGoalOwner_WhenCertainBeliefDisconfirmsNegativeUtilityGoal()
+        {
+            const double precision = 1e-2;
+            var villageAgent = new Agent("village");
+            var blacksmithAgent = new Agent("blacksmith");
+            var villageDestroyedGoal = new Goal("village destroyed", -1);
+
+            _gamygdala.RegisterAgent(villageAgent);
+            _gamygdala.RegisterAgent(blacksmithAgent);
+            _gamygdala.RegisterGoal(villageDestroyedGoal);
+            villageAgent.AddGoal(villageDestroyedGoal);
+            // Seed prior so we replicate Listing 3 step 3's
+            // post-step-2 state (village destroyed goal at 0.85).
+            villageAgent.SetGoalLikelihood(villageDestroyedGoal.Name, 0.85);
+
+            // Blacksmith provides weapons: certain belief, blocks the
+            // village-destroyed goal. unsnapped = (-1*1+1)/2 = 0;
+            // delta = 0 - 0.85 = -0.85; stored saturates to 0
+            // (disconfirmed) per the congruence-aware snap.
+            var blacksmithProvideWeaponsBelief = new Belief(1, blacksmithAgent.Name,
+                new[] { villageDestroyedGoal.Name }, new GoalCongruence[] { -1 });
+            _gamygdala.Appraise(blacksmithProvideWeaponsBelief);
+
+            villageAgent.TryGetGoalLikelihood(villageDestroyedGoal.Name, out var storedLikelihood)
+                .Should().BeTrue();
+            storedLikelihood.Value.Should().BeApproximately(0, 1e-9);
+
+            // Village now sees a negative-utility goal at likelihood 0
+            // with |delta| > 0.5: Relief + Joy at |-1 * -0.85| = 0.85.
+            var villageEmotions = villageAgent.GetEmotionalState();
+            villageEmotions.Should().Contain(e => e.Name == EmotionNames.Relief)
+                .Which.Intensity.Value.Should().BeApproximately(0.85, precision);
+            villageEmotions.Should().Contain(e => e.Name == EmotionNames.Joy)
+                .Which.Intensity.Value.Should().BeApproximately(0.85, precision);
+        }
+
+        /// <summary>
+        ///     Pins AgentActions Case 2 (affected == self == causal) as
+        ///     a no-op. Paper §3.4.4 would route Pride and Guilt here
+        ///     (the self-cause-self-effect quadrant) but the engine
+        ///     intentionally leaves the case empty (matches the
+        ///     upstream Gamygdala.js). A future Pride / Guilt
+        ///     implementation must not silently change this without
+        ///     updating the test.
+        /// </summary>
+        [Fact]
+        public void NotEmitPrideOrGuiltOrAgentActionEmotions_WhenSelfIsBothAffectedAndCausal()
+        {
+            const string agentName = "hero";
+            const string goalName = "win the tournament";
+            var heroAgent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, 1);
+
+            // Hero is the causal agent of a belief affecting its own goal.
+            // EvaluateInternalEmotion still produces Hope (utility>=0, 0<L<1, delta>=0).
+            // AgentActions Case 2 is the empty branch: no Gratitude / Anger /
+            // Gratification / Remorse should appear on hero.
+            var selfCausedBelief = new Belief(0.7, agentName, new[] { goalName },
+                new GoalCongruence[] { 1 });
+            _gamygdala.Appraise(selfCausedBelief);
+
+            var emotions = heroAgent.GetEmotionalState();
+            emotions.Should().NotContain(e => e.Name == EmotionNames.Gratitude);
+            emotions.Should().NotContain(e => e.Name == EmotionNames.Anger);
+            emotions.Should().NotContain(e => e.Name == EmotionNames.Gratification);
+            emotions.Should().NotContain(e => e.Name == EmotionNames.Remorse);
         }
     }
 }

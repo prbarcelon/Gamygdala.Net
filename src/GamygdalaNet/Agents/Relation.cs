@@ -21,7 +21,7 @@ namespace GamygdalaNet.Agents
         /// </summary>
         /// <param name="targetAgentName">The name of the target agent for this relation.</param>
         /// <param name="like">The relation, or how much the target agent is liked, from -1 (disliked) to 1 (liked).</param>
-        public Relation(string targetAgentName, DoubleNegativeOneToPositiveOneInclusive like)
+        public Relation(string targetAgentName, RelationLike like)
         {
             TargetAgentName = targetAgentName;
             Like = like;
@@ -29,7 +29,7 @@ namespace GamygdalaNet.Agents
         }
 
         public string TargetAgentName { get; }
-        public DoubleNegativeOneToPositiveOneInclusive Like { get; set; }
+        public RelationLike Like { get; set; }
         public Emotion[] EmotionsList => _emotions.Values.ToArray();
 
         public void AddEmotion(in Emotion emotion)

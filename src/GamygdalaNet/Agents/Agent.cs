@@ -33,6 +33,7 @@ namespace GamygdalaNet.Agents
         };
 
         private readonly Dictionary<string, Relation> _currentRelations;
+        private readonly Dictionary<string, EmotionIntensity> _defaultEmotionalState;
         private readonly Dictionary<string, Goal> _goals;
         private readonly Dictionary<string, double> _goalLikelihoods;
         private readonly Dictionary<string, Emotion> _internalState; // Trading space for lookup speed.
@@ -50,6 +51,7 @@ namespace GamygdalaNet.Agents
             _goalLikelihoods = new Dictionary<string, double>();
             _currentRelations = new Dictionary<string, Relation>();
             _internalState = new Dictionary<string, Emotion>();
+            _defaultEmotionalState = new Dictionary<string, EmotionIntensity>();
             _gain = 1.0;
         }
 
@@ -73,9 +75,8 @@ namespace GamygdalaNet.Agents
         /// <summary>
         ///     Removes a goal from this agent.
         /// </summary>
-        /// <param name="goalName">The name of the goal to be added. </param>
-        /// <returns>True if the goal could be removed, false otherwise.</returns>
-        /// ///
+        /// <param name="goalName">The name of the goal to remove.</param>
+        /// <returns>True if the goal was removed, false if the agent did not own it.</returns>
         /// <exception cref="ArgumentException"><see cref="goalName" /> must not be null or empty.</exception>
         public bool TryRemoveGoal(string goalName)
         {
@@ -115,30 +116,26 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
-        ///     Looks up the agent's recorded likelihood for the named
-        ///     goal. Returns false when the agent has not yet
-        ///     appraised any belief against this goal; per Popescu
-        ///     §3.2 line 184 the initial value is "Unknown" rather
-        ///     than a numeric prior, and the engine's first-appraisal
-        ///     delta calculation routes through a different branch
-        ///     when no prior is recorded (returning the
-        ///     post-appraisal likelihood as the delta directly, which
-        ///     matches the magnitudes Popescu pins in Listings 2-4).
-        ///     Existence-based check via the underlying dictionary's
-        ///     ContainsKey; no NaN sentinels.
+        ///     Returns the agent's recorded likelihood for the named
+        ///     goal, or false if no appraisal against the goal has
+        ///     run yet. Per Popescu §3.4.2 the initial value is
+        ///     "Unknown", not a numeric prior; on first appraisal
+        ///     the delta IS the post-appraisal likelihood (the
+        ///     magnitudes in Listings 1, 3, 4 only line up under
+        ///     this convention).
         /// </summary>
-        public bool TryGetGoalLikelihood(string goalName, out DoubleZeroToOneInclusive likelihood)
+        public bool TryGetGoalLikelihood(string goalName, out Likelihood likelihood)
         {
             if (string.IsNullOrEmpty(goalName))
                 throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
 
             if (_goalLikelihoods.TryGetValue(goalName, out var value))
             {
-                likelihood = new DoubleZeroToOneInclusive(value);
+                likelihood = new Likelihood(value);
                 return true;
             }
 
-            likelihood = new DoubleZeroToOneInclusive(0);
+            likelihood = new Likelihood(0);
             return false;
         }
 
@@ -151,7 +148,7 @@ namespace GamygdalaNet.Agents
         ///     <see cref="TryGetGoalLikelihood" /> recovers the
         ///     stored value.
         /// </summary>
-        public void SetGoalLikelihood(string goalName, DoubleZeroToOneInclusive likelihood)
+        public void SetGoalLikelihood(string goalName, Likelihood likelihood)
         {
             if (string.IsNullOrEmpty(goalName))
                 throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
@@ -181,13 +178,12 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
-        ///     A facilitating method to be able to appraise one event only from the perspective of the current agent (this).
+        ///     Appraises a single belief for this agent. Same as
+        ///     <c>gamygdala.Appraise(belief, this)</c>; saves you
+        ///     from threading the engine back through.
         /// </summary>
-        /// <param name="belief">The belief to be appraised.</param>
-        /// <param name="gamygdala">
-        ///     A reference to the gamygdala instance with the desired appraisal function, so you could use
-        ///     different gamygdala instances to manage different groups of agents.
-        /// </param>
+        /// <param name="belief">The belief to appraise.</param>
+        /// <param name="gamygdala">The engine to appraise against; different engine instances can manage different agent populations.</param>
         public void Appraise(Belief belief, Gamygdala gamygdala)
         {
             gamygdala.Appraise(belief, this);
@@ -200,14 +196,51 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
-        ///     This function returns either the state as is (gain=false) or a state based on gained limiter (limited between 0 and
-        ///     1), of which the gain can be set by using <see cref="SetGain" />. A high gain factor works well when appraisals are
-        ///     small
-        ///     and rare, and you want to see the effect of these appraisals. A low gain factor (close to 0 but in any case below
-        ///     1) works well for high frequency and/or large appraisals, so that the effect of these is dampened.
+        ///     Sets the agent's resting intensity for a named emotion.
+        ///     Per Popescu §3.4.6 the NPC's emotional state decays
+        ///     toward this default rather than toward zero. Defaults
+        ///     stay opt-in: an unset emotion decays to zero (the
+        ///     historical behavior). The substrate accepts the default
+        ///     but does not compute it; consumers wire personality
+        ///     models (e.g. OCEAN via AlmaNet) into this seam.
+        ///     Setting a default also seeds the current intensity at
+        ///     that value if the emotion is not already in the agent's
+        ///     state, so a freshly constructed agent reads its
+        ///     defaults out of <see cref="GetEmotionalState" /> before
+        ///     any appraisal has run.
         /// </summary>
-        /// <param name="useGain">Whether to use the gain function or not.</param>
-        /// <returns>An array of emotions.</returns>
+        public void SetDefaultEmotionIntensity(string emotionName, EmotionIntensity defaultIntensity)
+        {
+            if (string.IsNullOrEmpty(emotionName))
+                throw new ArgumentException($"{nameof(emotionName)} cannot be null or empty.");
+
+            _defaultEmotionalState[emotionName] = defaultIntensity;
+            if (!_internalState.ContainsKey(emotionName))
+                _internalState[emotionName] = new Emotion(emotionName, defaultIntensity);
+        }
+
+        /// <summary>
+        ///     Reads the agent's resting intensity for a named
+        ///     emotion. Returns false when no default has been set
+        ///     (the emotion decays to zero in that case).
+        /// </summary>
+        public bool TryGetDefaultEmotionIntensity(string emotionName, out EmotionIntensity defaultIntensity)
+        {
+            return _defaultEmotionalState.TryGetValue(emotionName, out defaultIntensity);
+        }
+
+        /// <summary>
+        ///     Returns the agent's currently held emotions. When
+        ///     <paramref name="useGain" /> is true the raw intensities
+        ///     go through a <c>g·x / (g·x + 1)</c> compression; tune
+        ///     <c>g</c> with <see cref="SetGain" />. High gain makes
+        ///     small or rare appraisals more visible; low gain
+        ///     dampens large or frequent ones. Gain is a port-specific
+        ///     extension; leave <paramref name="useGain" /> false for
+        ///     paper-faithful output.
+        /// </summary>
+        /// <param name="useGain">If true, apply the gain compression to each emotion's intensity.</param>
+        /// <returns>The agent's emotions and their intensities.</returns>
         public Emotion[] GetEmotionalState(bool useGain = false)
         {
             var state = !useGain
@@ -229,15 +262,13 @@ namespace GamygdalaNet.Agents
         ///     aggregator (equation 5 from Popescu, Broekens, van
         ///     Someren, "GAMYGDALA: An Emotion Engine for Games"):
         ///     <code>PAD ← 0.1 × log₂(Σ_e 2^(10 × PAD(e) × intensity(e)))</code>
-        ///     Linear for small values and less additive as values
-        ///     grow, "at least as intense as the most intense
-        ///     component" without strict summation. The paper picks
-        ///     this over sigmoid normalization specifically because
-        ///     sigmoid distorts small values. A defensive clamp to
-        ///     <c>[-1, +1]</c> protects against the rare case of
-        ///     multiple high-intensity same-polarity emotions
-        ///     stacking past the natural range (log-sum-exp can
-        ///     mildly exceed max contributor by up to log₂(N)/10).
+        ///     Per §3.4.6 this aggregator is not strictly additive,
+        ///     uses all active emotions rather than only the strongest,
+        ///     and stays at least as intense as the most intense
+        ///     contributor. A defensive clamp to <c>[-1, +1]</c> keeps
+        ///     <see cref="PadState" /> construction safe when multiple
+        ///     same-polarity contributors push the result slightly
+        ///     outside the natural range.
         ///     The optional <paramref name="useGain" /> applies the
         ///     classical Gamygdala gain compression on top, useful
         ///     when the consumer wants additional dampening for
@@ -307,7 +338,7 @@ namespace GamygdalaNet.Agents
         /// <param name="targetAgentName">The agent who is the target of the relation.</param>
         /// <param name="like">The relation, or how much the target agent is liked, from -1 (disliked) to 1 (liked).</param>
         /// <param name="isLikeAdditive">If true, <see cref="like" /> is added to the existing relation's like value.</param>
-        public void UpdateRelation(string targetAgentName, DoubleNegativeOneToPositiveOneInclusive like,
+        public void UpdateRelation(string targetAgentName, RelationLike like,
             bool isLikeAdditive = false)
         {
             if (!HasRelationWith(targetAgentName))
@@ -319,8 +350,8 @@ namespace GamygdalaNet.Agents
                 // Not in original code but reflective of gamygdala paper.
                 // We want to either change like over time or set it to a static value.
                 var initialLike = _currentRelations[targetAgentName].Like;
-                var finalLike = isLikeAdditive
-                    ? DoubleNegativeOneToPositiveOneInclusive.Clamp(initialLike + like)
+                RelationLike finalLike = isLikeAdditive
+                    ? new RelationLike(Math.Min(1, Math.Max(-1, initialLike + like)))
                     : like;
                 _currentRelations[targetAgentName].Like = finalLike;
             }
@@ -356,9 +387,12 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
-        ///     This method decays the emotional state and relations according to the decay factor and function defined in
-        ///     <see cref="gamygdala" />. Typically, this is called automatically when you use Gamygdala.
-        ///     <see cref="Gamygdala.StartDecay" />, but you can use it yourself if you want to manage the timing.
+        ///     Decays this agent's emotional state and relations
+        ///     according to the decay strategy on the supplied
+        ///     <paramref name="gamygdala" /> instance. The caller
+        ///     drives the cadence; the engine does not start its own
+        ///     decay loop. <see cref="Gamygdala.DecayAll" /> applies
+        ///     this to every registered agent.
         /// </summary>
         /// <param name="gamygdala">
         ///     A reference to the gamygdala instance with the desired decay function, so you could use
@@ -366,7 +400,7 @@ namespace GamygdalaNet.Agents
         /// </param>
         public void Decay(Gamygdala gamygdala)
         {
-            _internalState.Decay(gamygdala);
+            _internalState.Decay(gamygdala, _defaultEmotionalState);
             foreach (var relation in _currentRelations) relation.Value.Decay(gamygdala);
         }
 

@@ -100,16 +100,18 @@ namespace GamygdalaNet
 
         public bool PrintDebug { get; set; }
 
-        public double DecayFunction(DoubleZeroToOneInclusive intensity)
+        public double DecayFunction(EmotionIntensity intensity)
         {
             return _decayStrategy.Decay(intensity, _millisPassed);
         }
 
         /// <summary>
-        ///     A facilitator method that creates a new Agent and registers it for you.
+        ///     Creates a new <see cref="Agent" /> and registers it
+        ///     with this engine. Returns the existing instance if an
+        ///     agent with the same name is already registered.
         /// </summary>
-        /// <param name="agentName"></param>
-        /// <returns>An agent reference to the newly created agent.</returns>
+        /// <param name="agentName">Identifier for the new agent.</param>
+        /// <returns>The newly created (or pre-existing) agent.</returns>
         public Agent CreateAgent(string agentName)
         {
             if (_agents.TryGetValue(agentName, out var agent))
@@ -124,22 +126,24 @@ namespace GamygdalaNet
         }
 
         /// <summary>
-        ///     A facilitator method to create a goal for a particular agent, that also registers the goal to the agent and
-        ///     gamygdala. This method is thus handy if you want to keep all gamygdala logic internal to Gamygdala. However, if you
-        ///     want to do more sophisticated stuff (e.g., goals for multiple agents, keep track of your own list of goals to also
-        ///     remove them, appraise events per agent without the need for gamygdala to keep track of goals, etc...) this method
-        ///     will probably be doing too much.
+        ///     Creates a <see cref="Goal" />, registers it with the
+        ///     engine, and adds it to the named agent. Fine when each
+        ///     goal has a single owner registered up front. For
+        ///     multi-owner goals, or anything that needs control over
+        ///     the goal's lifecycle, build the <see cref="Goal" />
+        ///     yourself and call <see cref="RegisterGoal" /> plus
+        ///     <see cref="Agent.AddGoal" /> directly.
         /// </summary>
-        /// <param name="agentName">The agent's name to which the newly created goal has to be added.</param>
-        /// <param name="goalName">The goal's name.</param>
-        /// <param name="goalUtility">The goal's utility.</param>
+        /// <param name="agentName">Name of the agent that owns the new goal.</param>
+        /// <param name="goalName">Identifier for the new goal.</param>
+        /// <param name="goalUtility">The goal's utility in [-1, +1].</param>
         /// <param name="isMaintenanceGoal">
-        ///     Defines if the goal is a maintenance goal or not [optional]. The default is that the
-        ///     goal is an achievement goal, i.e., a goal that once it's likelihood reaches true (1) or false (-1) stays that way.
+        ///     False (default) for an achievement goal, which settles once its stored likelihood reaches 0 or 1.
+        ///     True for a maintenance goal, which can cycle indefinitely.
         /// </param>
-        /// <returns>A goal reference to the newly created goal.</returns>
+        /// <returns>The newly created goal.</returns>
         public Goal CreateGoalForAgent(string agentName, string goalName,
-            DoubleNegativeOneToPositiveOneInclusive goalUtility, bool isMaintenanceGoal = false)
+            GoalUtility goalUtility, bool isMaintenanceGoal = false)
         {
             if (_agents.TryGetValue(agentName, out var agent))
             {
@@ -166,15 +170,17 @@ namespace GamygdalaNet
         }
 
         /// <summary>
-        ///     A facilitator method to create a relation between two agents. Both source and target have to exist and be
-        ///     registered with this Gamygdala instance. This method is thus handy if you want to keep all gamygdala logic internal
-        ///     to Gamygdala.
+        ///     Sets a relation from <paramref name="sourceAgentName" />
+        ///     to <paramref name="targetAgentName" />. Both agents must
+        ///     already be registered with this engine; if either name
+        ///     is unknown, logs a warning and returns without changing
+        ///     state.
         /// </summary>
-        /// <param name="sourceAgentName">The agent who has the relation (the source)</param>
-        /// <param name="targetAgentName">The agent who is the target of the relation (the target)</param>
-        /// <param name="relation">The relation, or how much the target agent is liked, from -1 (disliked) to 1 (liked).</param>
+        /// <param name="sourceAgentName">The agent that holds the relation.</param>
+        /// <param name="targetAgentName">The agent that the relation points at.</param>
+        /// <param name="relation">How strongly the source likes the target, from -1 (disliked) to +1 (liked).</param>
         public void CreateRelation(string sourceAgentName, string targetAgentName,
-            DoubleNegativeOneToPositiveOneInclusive relation)
+            RelationLike relation)
         {
             if (_agents.TryGetValue(sourceAgentName, out var source)
                 && _agents.TryGetValue(targetAgentName, out var target))
@@ -185,47 +191,19 @@ namespace GamygdalaNet
         }
 
         /// <summary>
-        ///     A facilitator method to appraise an event. It takes in the same as what the new Belief(...) takes in, creates a
-        ///     belief and appraises it for all agents that are registered. This method is thus handy if you want to keep all
-        ///     gamygdala logic internal to Gamygdala.
+        ///     Constructs a <see cref="Belief" /> from the supplied
+        ///     arguments and appraises it for every registered agent.
+        ///     Equivalent to <c>Appraise(new Belief(...))</c>; provided
+        ///     so callers can keep all Gamygdala interaction internal
+        ///     to this class without referencing <see cref="Belief" />
+        ///     directly. See the <see cref="Belief" /> constructor for
+        ///     the meaning of each argument.
         /// </summary>
-        /// <param name="likelihood">
-        ///     The likelihood of this belief to be true, from 0 (disconfirmed) to 1 (confirmed).
-        /// </param>
-        /// <param name="causalAgentName">The agent's name of the causal agent of this belief.</param>
-        /// <param name="affectedGoalNames">An array of affected goals' names to be copied.</param>
-        /// <param name="goalCongruences">
-        ///     An array of the affected goals' congruences (-1 to 1 inclusive) to be copied. The extent to which this
-        ///     event is good (1) or bad (-1) for a goal.
-        /// </param>
-        /// <param name="isIncremental">
-        ///     Incremental evidence enforces gamygdala to see this event as incremental evidence for (or
-        ///     against) the list of goals provided, i.e, it will add or subtract this belief's likelihood*congruence
-        ///     from the goal likelihood instead of using the belief as "state" defining the absolute likelihood.
-        ///     Incremental evidence enforces gamygdala to use the likelihood as delta, i.e, it will add or subtract this belief's
-        ///     likelihood from the goal likelihood instead of using the belief as "state" defining the absolute likelihood
-        /// </param>
-        public void AppraiseBelief(DoubleZeroToOneInclusive likelihood, string causalAgentName,
-            string[] affectedGoalNames, DoubleNegativeOneToPositiveOneInclusive[] goalCongruences,
-            bool isIncremental = false)
+        public void AppraiseBelief(Likelihood likelihood, string causalAgentName,
+            string[] affectedGoalNames, GoalCongruence[] goalCongruences)
         {
-            var tempBelief = new Belief(likelihood, causalAgentName, affectedGoalNames, goalCongruences, isIncremental);
+            var tempBelief = new Belief(likelihood, causalAgentName, affectedGoalNames, goalCongruences);
             Appraise(tempBelief);
-        }
-
-        /// <summary>
-        ///     Facilitator to set the gain for the whole set of agents known to Gamygdala. For more realistic, complex games, you
-        ///     would typically set the gain for each agent type separately to fine-tune the intensity of the response.
-        /// </summary>
-        /// <param name="gain">The gain value, from 0 to 20 inclusive.</param>
-        private void SetGain(Gain gain)
-        {
-            foreach (var agent in _agents) agent.Value.SetGain(gain);
-        }
-
-        public void StartDecay()
-        {
-            throw new NotImplementedException();
         }
 
         /// <summary>
@@ -282,18 +260,9 @@ namespace GamygdalaNet
         /// <returns></returns>
         public bool Appraise(Belief belief, Agent affectedAgent = null)
         {
-            // TODO - rename to TryAppraise.
-
             if (affectedAgent == null)
             {
-                // Check all
                 Log(belief);
-                if (belief.GoalCongruences.Length != belief.AffectedGoalNames.Length
-                ) // TODO - Should this be guaranteed by Belief?
-                {
-                    Log("Error: the congruence list was not of the same length as the affected goal list");
-                    return false;
-                }
 
                 if (_goals.Count == 0)
                 {
@@ -326,7 +295,7 @@ namespace GamygdalaNet
                             out var ownerPriorLikelihood);
                         var (newLikelihood, deltaLikelihood) = CalculateDeltaLikelihood(
                             goalDefinition, ownerPriorLikelihood, hasPrior,
-                            belief.GoalCongruences[i], belief.Likelihood, belief.IsIncremental);
+                            belief.GoalCongruences[i], belief.Likelihood);
                         owner.SetGoalLikelihood(goalDefinition.Name, newLikelihood);
                         var desirability = deltaLikelihood * utility;
                         Log(
@@ -370,7 +339,7 @@ namespace GamygdalaNet
                         out var ownerPriorLikelihood);
                     var (newLikelihood, deltaLikelihood) = CalculateDeltaLikelihood(
                         goalDefinition, ownerPriorLikelihood, hasPrior,
-                        belief.GoalCongruences[i], belief.Likelihood, belief.IsIncremental);
+                        belief.GoalCongruences[i], belief.Likelihood);
                     affectedAgent.SetGoalLikelihood(goalDefinition.Name, newLikelihood);
                     var utility = goalDefinition.Utility;
                     var desirability = deltaLikelihood * utility;
@@ -406,13 +375,10 @@ namespace GamygdalaNet
         }
 
         /// <summary>
-        ///     Decays the emotional state and relations for all registered agents. It performs the decay according to the time
-        ///     passed, so longer intervals between consecutive calls result in bigger clunky steps. Typically this is called
-        ///     automatically when you use <see cref="StartDecay" />, but you can use it yourself if you want to manage the timing.
-        ///     This function is keeping track of the millis passed since the last call, and will (try to) keep the decay close to
-        ///     the desired decay factor, regardless of the time passed. You can call this any time you want, such as within a game
-        ///     loop. Further, if you want to tweak the emotional intensity decay of individual agents, you should tweak the
-        ///     decayFactor per agent not the "frame rate" of the decay (as this doesn't change the rate).
+        ///     Decays the emotional state and relations for all registered agents. The caller is responsible for invoking
+        ///     this on a cadence appropriate to the game (e.g. once per game-loop tick or once per Update). The function
+        ///     tracks millis-since-last-call so the decay rate stays close to the configured factor regardless of how
+        ///     frequently you call it. Tweak the decay strength via the decay strategy's factor, not the call frequency.
         /// </summary>
         public void DecayAll(long? millisPassed = null)
         {
@@ -435,56 +401,62 @@ namespace GamygdalaNet
         }
 
         /// <summary>
-        ///     Defines the change in a goal's likelihood due to the congruence and likelihood of a current event. We cope with two
-        ///     types of beliefs: incremental and absolute beliefs. Incremental beliefs have their likelihood added to the goal.
-        ///     Absolute define the current likelihood of the goal. There are two types of goals: maintenance and achievement. If
-        ///     an achievement goal (the default) is -1 or 1, we can't change it any more (unless externally and explicitly by
-        ///     changing the goal's likelihood).
-        /// </summary>
-        /// <param name="goal"></param>
-        /// <param name="congruence"></param>
-        /// <param name="likelihood"></param>
-        /// <param name="isIncremental"></param>
-        /// <returns></returns>
-        /// <summary>
-        ///     Pure: computes the new likelihood and the delta given
-        ///     the agent's prior state for the goal. The caller writes
-        ///     the new value back to the agent's per-goal state via
+        ///     Pure function: computes the new likelihood for the
+        ///     goal via equation 2 and the delta from the agent's
+        ///     prior state. The caller writes the new value back via
         ///     <see cref="Agent.SetGoalLikelihood" />.
         ///     <para>
-        ///         Per Popescu §3.2 line 184 the initial likelihood is
+        ///         Equation 2: <c>newLikelihood = (congruence * likelihood + 1) / 2</c>.
+        ///         Achievement goals at the 0 or 1 boundary stop
+        ///         moving; maintenance goals keep accepting updates.
+        ///         A goal with a custom likelihood calculation bypasses
+        ///         equation 2 and uses its supplied function instead.
+        ///     </para>
+        ///     <para>
+        ///         Per Popescu §3.4.2 the initial likelihood is
         ///         "Unknown". When <paramref name="hasPriorLikelihood" />
         ///         is false the returned delta IS the post-appraisal
-        ///         likelihood (no prior to subtract from), matching
-        ///         the magnitudes the paper pins in Listings 2-4.
-        ///         Once a prior has been recorded the delta is the
-        ///         conventional <c>newLikelihood - oldLikelihood</c>.
+        ///         likelihood (the magnitudes in Listings 1, 3, 4 only
+        ///         line up under this convention). Once a prior is
+        ///         recorded the delta is the usual
+        ///         <c>newLikelihood - oldLikelihood</c>.
         ///     </para>
-        ///     Achievement goals at the +/- 1 boundary short-circuit
-        ///     to zero delta; custom-likelihood goals defer to their
-        ///     supplied function. The belief-likelihood=1 / =0 special
-        ///     cases snap the new likelihood to the certainty boundary
-        ///     so subsequent appraisals see a saturated goal.
+        ///     Belief.likelihood at 0 or 1 snaps the STORED likelihood
+        ///     to that certainty boundary, but the returned delta
+        ///     still uses the unsnapped formula result so the
+        ///     listings' intensities match exactly.
         /// </summary>
-        private static (DoubleZeroToOneInclusive newLikelihood, DoubleNegativeOneToPositiveOneInclusive delta)
+        /// <param name="goal">The goal whose likelihood is being updated.</param>
+        /// <param name="oldLikelihood">The agent's prior likelihood for the goal (zero when <paramref name="hasPriorLikelihood"/> is false).</param>
+        /// <param name="hasPriorLikelihood">True if the agent has already recorded a likelihood for this goal.</param>
+        /// <param name="congruence">How strongly the belief facilitates (positive) or blocks (negative) the goal.</param>
+        /// <param name="likelihood">The belief's certainty.</param>
+        /// <returns>The new likelihood to store, and the delta against the prior.</returns>
+        private static (Likelihood newLikelihood, DoubleNegativeOneToPositiveOneInclusive delta)
             CalculateDeltaLikelihood(
                 Goal goal,
-                DoubleZeroToOneInclusive oldLikelihood,
+                Likelihood oldLikelihood,
                 bool hasPriorLikelihood,
-                DoubleNegativeOneToPositiveOneInclusive congruence,
-                DoubleZeroToOneInclusive likelihood,
-                bool isIncremental)
+                GoalCongruence congruence,
+                Likelihood likelihood)
         {
             if (goal == null)
                 throw new ArgumentNullException(nameof(goal));
 
+            // Achievement goals settle at either boundary. The
+            // paper's §3.2 framing of "achieved or permanently failed"
+            // uses signed-likelihood notation where the failure
+            // boundary is -1; this port's Likelihood domain is [0, 1]
+            // (equation 2's natural output range), so the failure
+            // boundary maps to 0. Once an achievement goal is at
+            // either boundary, subsequent beliefs do not move it.
+            // Maintenance goals are exempt and can cycle indefinitely.
             if (!goal.IsMaintenanceGoal && hasPriorLikelihood
-                                        && (oldLikelihood >= 1 || oldLikelihood <= -1))
-                // Goal has already been achieved; no further movement.
+                                        && (oldLikelihood >= 1 || oldLikelihood <= 0))
                 return (oldLikelihood,
                     new DoubleNegativeOneToPositiveOneInclusive(0));
 
-            DoubleZeroToOneInclusive newLikelihood;
+            Likelihood newLikelihood;
             if (goal.HasCustomLikelihoodCalculation)
             {
                 // If the goal has an associated function to calculate the likelihood that the goal is true, then use that function.
@@ -492,40 +464,44 @@ namespace GamygdalaNet
             }
             else
             {
-                // Otherwise, use the event encoded updates. The
-                // incremental form uses 0 as the implicit base when no
-                // prior is recorded (the paper's "Unknown" maps to no
-                // contribution from prior state).
-                if (isIncremental)
-                {
-                    var prior = hasPriorLikelihood ? (double)oldLikelihood : 0.0;
-                    var unclampedNewLikelihood = prior + likelihood * congruence;
-                    newLikelihood = DoubleZeroToOneInclusive.Clamp(unclampedNewLikelihood);
-                }
-                else
-                {
-                    var unclampedNewLikelihood = (congruence * likelihood + 1.0) / 2.0;
-                    newLikelihood = DoubleZeroToOneInclusive.Clamp(unclampedNewLikelihood);
-                }
+                var unclampedNewLikelihood = (congruence * likelihood + 1.0) / 2.0;
+                newLikelihood = Likelihood.Clamp(unclampedNewLikelihood);
             }
 
-            // Paper-aligned snap (Popescu §3.2): when the belief
-            // arrives at certainty, the STORED likelihood saturates
-            // to the certainty boundary so subsequent appraisals see
-            // an achieved / disconfirmed goal. But the returned
-            // delta uses the UNSNAPPED newLikelihood from the formula
-            // above — the paper's Listings 2-4 (Relief, Pride, RTS)
-            // pin intensities that only match when the delta is
-            // computed against the unsnapped value, then stored as
-            // snapped.
+            // Paper-aligned saturation snap (Popescu §3.4.2 + Listings
+            // 1, 3). When the belief is at certainty (likelihood == 0
+            // or 1) AND the belief actually affects this goal
+            // (congruence != 0), the STORED likelihood saturates to
+            // whichever boundary the congruence sign points at:
+            //   certain-happening + facilitating  → goal achieves (1)
+            //   certain-happening + blocking      → goal disconfirmed (0)
+            //   certain-not-happening + facilitating → goal disconfirmed (0)
+            //   certain-not-happening + blocking    → goal achieves (1)
+            // Two exemptions short-circuit the snap:
+            //  - congruence == 0: the belief is unrelated to this
+            //    goal, so equation 2's natural 0.5 ("Unknown") stands.
+            //  - HasCustomLikelihoodCalculation: a custom calc replaces
+            //    equation 2 entirely, so its return value wins over
+            //    the snap.
+            // The returned delta still uses the UNSNAPPED newLikelihood
+            // from the formula above; the paper's Listings 1, 3, 4 pin
+            // intensities that only match when the delta is computed
+            // against the unsnapped value, then stored as snapped.
             var storedLikelihood = newLikelihood;
-            if (Math.Abs(likelihood - 1) < double.Epsilon)
-                storedLikelihood = new DoubleZeroToOneInclusive(1);
-            else if (likelihood < double.Epsilon)
-                storedLikelihood = new DoubleZeroToOneInclusive(0);
+            var beliefIsCertainOfHappening = Math.Abs(likelihood - 1) < double.Epsilon;
+            var beliefIsCertainOfNonHappening = likelihood < double.Epsilon;
+            var beliefAffectsThisGoal = Math.Abs(congruence) > double.Epsilon;
+            if (!goal.HasCustomLikelihoodCalculation && beliefAffectsThisGoal &&
+                (beliefIsCertainOfHappening || beliefIsCertainOfNonHappening))
+            {
+                var goalSaturatesToAchieved =
+                    (beliefIsCertainOfHappening && congruence > 0) ||
+                    (beliefIsCertainOfNonHappening && congruence < 0);
+                storedLikelihood = goalSaturatesToAchieved ? new Likelihood(1) : new Likelihood(0);
+            }
 
             var delta = !hasPriorLikelihood
-                ? (DoubleNegativeOneToPositiveOneInclusive)(double)newLikelihood
+                ? new DoubleNegativeOneToPositiveOneInclusive(newLikelihood)
                 : new DoubleNegativeOneToPositiveOneInclusive(newLikelihood - oldLikelihood);
             return (storedLikelihood, delta);
         }
@@ -537,8 +513,8 @@ namespace GamygdalaNet
         /// <param name="deltaLikelihood"></param>
         /// <param name="likelihood"></param>
         /// <param name="agent"></param>
-        private static void EvaluateInternalEmotion(DoubleNegativeOneToPositiveOneInclusive utility,
-            DoubleNegativeOneToPositiveOneInclusive deltaLikelihood, DoubleZeroToOneInclusive likelihood, Agent agent)
+        private static void EvaluateInternalEmotion(GoalUtility utility,
+            DoubleNegativeOneToPositiveOneInclusive deltaLikelihood, Likelihood likelihood, Agent agent)
         {
             if (agent == null)
                 throw new ArgumentNullException(nameof(agent));
@@ -603,7 +579,7 @@ namespace GamygdalaNet
         /// </param>
         /// <param name="relation">Relation between the agent being evaluated and the goal owner of the affected goal.</param>
         /// <param name="agent">The agent getting evaluated (the agent that gets the social emotion added to its emotional state).</param>
-        private static void EvaluateSocialEmotion(DoubleNegativeOneToPositiveOneInclusive utility,
+        private static void EvaluateSocialEmotion(GoalUtility utility,
             DoubleNegativeOneToPositiveOneInclusive desirability,
             DoubleNegativeOneToPositiveOneInclusive deltaLikelihood,
             Relation relation, Agent agent)
@@ -632,7 +608,7 @@ namespace GamygdalaNet
         }
 
         private void AgentActions(string affectedAgentName, string causalAgentName, string selfName,
-            DoubleNegativeOneToPositiveOneInclusive desirability, DoubleNegativeOneToPositiveOneInclusive utility,
+            DoubleNegativeOneToPositiveOneInclusive desirability, GoalUtility utility,
             DoubleNegativeOneToPositiveOneInclusive deltaLikelihood)
         {
             if (string.IsNullOrEmpty(affectedAgentName))
@@ -656,7 +632,7 @@ namespace GamygdalaNet
                 var intensity = Math.Abs(utility * deltaLikelihood);
                 var self = _agents[selfName]; // TODO - possible error here if selfName doesn't exist.
 
-                _relationLikeStrategy.UpdateRelation(self, causalAgentName, desirability);
+                _relationLikeStrategy.UpdateRelation(self, causalAgentName, new RelationLike(desirability));
 
                 if (!self.TryGetRelation(causalAgentName, out var relation))
                     throw new InvalidOperationException(); // This should never happen.

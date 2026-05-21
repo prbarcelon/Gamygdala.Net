@@ -13,7 +13,7 @@ namespace GamygdalaNet.Agents.Data
         /// </summary>
         /// <param name="name">The name of the emotion</param>
         /// <param name="intensity">The initial intensity of the emotion</param>
-        public Emotion(string name, DoubleZeroToOneInclusive intensity)
+        public Emotion(string name, EmotionIntensity intensity)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException($"{nameof(name)} cannot be null or empty.");
@@ -23,9 +23,9 @@ namespace GamygdalaNet.Agents.Data
         }
 
         public string Name { get; }
-        public DoubleZeroToOneInclusive Intensity { get; }
+        public EmotionIntensity Intensity { get; }
 
-        public Emotion CopyButReplace(DoubleZeroToOneInclusive intensity)
+        public Emotion CopyButReplace(EmotionIntensity intensity)
         {
             return new Emotion(Name, intensity);
         }

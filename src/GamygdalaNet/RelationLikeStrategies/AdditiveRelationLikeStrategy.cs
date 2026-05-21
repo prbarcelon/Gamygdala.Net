@@ -9,7 +9,7 @@ namespace GamygdalaNet.RelationLikeStrategies
     /// </summary>
     public class AdditiveRelationLikeStrategy : IRelationLikeStrategy
     {
-        public void UpdateRelation(Agent self, string causalAgentName, DoubleNegativeOneToPositiveOneInclusive like)
+        public void UpdateRelation(Agent self, string causalAgentName, RelationLike like)
         {
             self.UpdateRelation(causalAgentName, like, true);
         }

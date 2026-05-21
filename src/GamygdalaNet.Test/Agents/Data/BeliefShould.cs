@@ -10,21 +10,21 @@ namespace GamygdalaNet.Test.Agents.Data
     {
         private readonly string _agentName;
         private readonly Belief _belief;
-        private readonly DoubleNegativeOneToPositiveOneInclusive[] _congruences;
+        private readonly GoalCongruence[] _congruences;
         private readonly string[] _goals;
 
         public BeliefShould()
         {
             _agentName = "agent";
             _goals = new[] {"goal"};
-            _congruences = new[] {new DoubleNegativeOneToPositiveOneInclusive(.5)};
-            _belief = new Belief(.8, _agentName, _goals, _congruences, true);
+            _congruences = new[] {new GoalCongruence(.5)};
+            _belief = new Belief(.8, _agentName, _goals, _congruences);
         }
 
         [Fact]
         public void ThrowArgumentOutOfRangeException_WhenGivenGoalsAndCongruenceOfDifferentLengthsDuringConstruction()
         {
-            var emptyCongruences = new DoubleNegativeOneToPositiveOneInclusive[0];
+            var emptyCongruences = new GoalCongruence[0];
             Action act = () => new Belief(.8, _agentName, _goals, emptyCongruences);
 
             act.Should().Throw<ArgumentOutOfRangeException>()
@@ -50,15 +50,6 @@ namespace GamygdalaNet.Test.Agents.Data
             _belief.AffectedGoalNames.Should().BeEquivalentTo(_goals);
         }
 
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public void ReturnExpectedIncrementalState(bool isIncremental)
-        {
-            var belief = new Belief(.8, _agentName, _goals, _congruences, isIncremental);
-            belief.IsIncremental.Should().Be(isIncremental);
-        }
-
         [Fact]
         public void ReturnExpectedCausalAgent()
         {
@@ -68,7 +59,7 @@ namespace GamygdalaNet.Test.Agents.Data
         [Fact]
         public void ReturnExpectedBeliefAsString()
         {
-            _belief.ToString().Should().Be("Belief: goal(0.50); likelihood=0.80, causalAgent=agent, isIncremental=True");
+            _belief.ToString().Should().Be("Belief: goal(0.50); likelihood=0.80, causalAgent=agent");
         }
     }
 }

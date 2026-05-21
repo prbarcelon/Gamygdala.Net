@@ -12,6 +12,6 @@ namespace GamygdalaNet.RelationLikeStrategies
         /// <param name="self">Agent owning the relation towards <see cref="targetAgentName" />.</param>
         /// <param name="targetAgentName">The agent who is the target of the relation.</param>
         /// <param name="like">The relation, or how much the target agent is liked, from -1 (disliked) to 1 (liked).</param>
-        void UpdateRelation(Agent self, string targetAgentName, DoubleNegativeOneToPositiveOneInclusive like);
+        void UpdateRelation(Agent self, string targetAgentName, RelationLike like);
     }
 }
