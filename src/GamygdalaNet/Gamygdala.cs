@@ -432,30 +432,60 @@ namespace GamygdalaNet
         /// <param name="likelihood"></param>
         /// <param name="isIncremental"></param>
         /// <returns></returns>
-        private static DoubleNegativeOneToPositiveOneInclusive CalculateDeltaLikelihood(Goal goal,
-            DoubleNegativeOneToPositiveOneInclusive congruence, DoubleZeroToOneInclusive likelihood, bool isIncremental)
+        /// <summary>
+        ///     Pure: computes the new likelihood and the delta given
+        ///     the agent's prior state for the goal. The caller writes
+        ///     the new value back to the agent's per-goal state via
+        ///     <see cref="Agent.SetGoalLikelihood" />.
+        ///     <para>
+        ///         Per Popescu §3.2 line 184 the initial likelihood is
+        ///         "Unknown". When <paramref name="hasPriorLikelihood" />
+        ///         is false the returned delta IS the post-appraisal
+        ///         likelihood (no prior to subtract from), matching
+        ///         the magnitudes the paper pins in Listings 2-4.
+        ///         Once a prior has been recorded the delta is the
+        ///         conventional <c>newLikelihood - oldLikelihood</c>.
+        ///     </para>
+        ///     Achievement goals at the +/- 1 boundary short-circuit
+        ///     to zero delta; custom-likelihood goals defer to their
+        ///     supplied function. The belief-likelihood=1 / =0 special
+        ///     cases snap the new likelihood to the certainty boundary
+        ///     so subsequent appraisals see a saturated goal.
+        /// </summary>
+        private static (DoubleZeroToOneInclusive newLikelihood, DoubleNegativeOneToPositiveOneInclusive delta)
+            CalculateDeltaLikelihood(
+                Goal goal,
+                DoubleZeroToOneInclusive oldLikelihood,
+                bool hasPriorLikelihood,
+                DoubleNegativeOneToPositiveOneInclusive congruence,
+                DoubleZeroToOneInclusive likelihood,
+                bool isIncremental)
         {
             if (goal == null)
                 throw new ArgumentNullException(nameof(goal));
 
-            var oldLikelihood = goal.Likelihood;
-
-            if (!goal.IsMaintenanceGoal && (oldLikelihood >= 1 || oldLikelihood <= -1))
-                // Goal has already been achieved.
-                return 0;
+            if (!goal.IsMaintenanceGoal && hasPriorLikelihood
+                                        && (oldLikelihood >= 1 || oldLikelihood <= -1))
+                // Goal has already been achieved; no further movement.
+                return (oldLikelihood,
+                    new DoubleNegativeOneToPositiveOneInclusive(0));
 
             DoubleZeroToOneInclusive newLikelihood;
             if (goal.HasCustomLikelihoodCalculation)
             {
-                // If the goal has an associated function to calculate the likelihood that the goal is true, then use that function. 
+                // If the goal has an associated function to calculate the likelihood that the goal is true, then use that function.
                 newLikelihood = goal.CustomLikelihoodCalculation();
             }
             else
             {
-                // Otherwise, use the event encoded updates.
+                // Otherwise, use the event encoded updates. The
+                // incremental form uses 0 as the implicit base when no
+                // prior is recorded (the paper's "Unknown" maps to no
+                // contribution from prior state).
                 if (isIncremental)
                 {
-                    var unclampedNewLikelihood = oldLikelihood + likelihood * congruence;
+                    var prior = hasPriorLikelihood ? (double)oldLikelihood : 0.0;
+                    var unclampedNewLikelihood = prior + likelihood * congruence;
                     newLikelihood = DoubleZeroToOneInclusive.Clamp(unclampedNewLikelihood);
                 }
                 else
@@ -465,17 +495,25 @@ namespace GamygdalaNet
                 }
             }
 
-            if (Math.Abs(likelihood - 1) < double.Epsilon) // Not in original code but reflective of gamygdala paper.
-                goal.Likelihood = 1;
-            else if (likelihood < double.Epsilon) // Not in original code but reflective of gamygdala paper.
-                goal.Likelihood = 0;
-            else
-                goal.Likelihood =
-                    newLikelihood; // TODO - this function isn't pure because we are setting the likelihood.    
+            // Paper-aligned snap (Popescu §3.2): when the belief
+            // arrives at certainty, the STORED likelihood saturates
+            // to the certainty boundary so subsequent appraisals see
+            // an achieved / disconfirmed goal. But the returned
+            // delta uses the UNSNAPPED newLikelihood from the formula
+            // above — the paper's Listings 2-4 (Relief, Pride, RTS)
+            // pin intensities that only match when the delta is
+            // computed against the unsnapped value, then stored as
+            // snapped.
+            var storedLikelihood = newLikelihood;
+            if (Math.Abs(likelihood - 1) < double.Epsilon)
+                storedLikelihood = new DoubleZeroToOneInclusive(1);
+            else if (likelihood < double.Epsilon)
+                storedLikelihood = new DoubleZeroToOneInclusive(0);
 
-            return double.IsNaN(oldLikelihood)
-                ? newLikelihood
+            var delta = !hasPriorLikelihood
+                ? (DoubleNegativeOneToPositiveOneInclusive)(double)newLikelihood
                 : new DoubleNegativeOneToPositiveOneInclusive(newLikelihood - oldLikelihood);
+            return (storedLikelihood, delta);
         }
 
         /// <summary>
