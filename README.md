@@ -517,6 +517,7 @@ Implement `IDecayStrategy` to provide custom decay behavior.
 A few features in this port ship beyond what Popescu's paper specifies. Each is inherited from the upstream JavaScript implementation. Default behavior is paper-faithful; the extensions are opt-in.
 
 - **`Goal.CustomLikelihoodCalculation`.** Replaces equation 2 with a caller-supplied function. The certainty-snap is suppressed for goals with a custom calc, so the custom return value wins. The achievement-goal short-circuit still applies, so once a custom-calc achievement goal reaches 0 or 1 the custom function stops being invoked.
+- **`Goal.LikelihoodDecayRate`.** Per-tick fraction by which each agent's stored likelihood for the goal glides back toward the "Unknown" prior of 0.5. Useful for social-needs goals like "be liked" or "be respected": without decay, a single confirmation locks the goal at 1.0 and subsequent positive beliefs produce no meaningful delta. With a small positive rate, the goal becomes responsive to fresh validation again after time passes. Default 0 (no decay, paper-faithful). Applied by `Agent.Decay` alongside the existing emotion + relation decay.
 - **`GetEmotionalState(useGain=true)` and `GetPadState(useGain=true)`.** Sigmoid-style gain compression on top of the discrete-emotion intensities and the PAD aggregator. The paper specifies neither; default to `useGain=false` for paper-faithful output.
 
 Personality-as-default-mood (§3.4.6), once a known gap, is now implemented; see [Default Emotional State](#default-emotional-state-personality-baseline) above.

@@ -352,6 +352,114 @@ namespace GamygdalaNet.Test
         }
 
         /// <summary>
+        ///     A goal with a positive <c>LikelihoodDecayRate</c>
+        ///     glides its stored likelihood back toward the "Unknown"
+        ///     prior (0.5) on each engine tick. Port-specific seam for
+        ///     social-needs goals: "be liked" should not stay at 1.0
+        ///     forever after a single compliment lands; one decay tick
+        ///     pulls it back proportional to the configured rate.
+        /// </summary>
+        [Fact]
+        public void GlideGoalLikelihoodTowardUnknownPriorAtConfiguredRate()
+        {
+            const string agentName = "agent";
+            const string goalName = "be liked";
+            var agent = _gamygdala.CreateAgent(agentName);
+            var decayingGoal = new Goal(goalName, 0.6, isMaintenanceGoal: true, likelihoodDecayRate: 0.1);
+            _gamygdala.RegisterGoal(decayingGoal);
+            agent.AddGoal(decayingGoal);
+            agent.SetGoalLikelihood(goalName, 1.0);
+
+            // One tick: lerp(1.0, 0.5, 0.1) = 0.95.
+            _gamygdala.DecayAll(1000);
+            agent.TryGetGoalLikelihood(goalName, out var afterOne).Should().BeTrue();
+            afterOne.Value.Should().BeApproximately(0.95, 1e-9);
+
+            // After many ticks, the value settles at the "Unknown" prior 0.5.
+            for (var i = 0; i < 200; i++) _gamygdala.DecayAll(1000);
+            agent.TryGetGoalLikelihood(goalName, out var settled).Should().BeTrue();
+            settled.Value.Should().BeApproximately(0.5, 1e-3);
+        }
+
+        /// <summary>
+        ///     The default <c>LikelihoodDecayRate</c> of 0 leaves goal
+        ///     likelihoods untouched across decay ticks (paper-faithful
+        ///     behavior). Regression guard so the opt-in nature of the
+        ///     seam never silently flips on.
+        /// </summary>
+        [Fact]
+        public void LeaveGoalLikelihoodUnchanged_WhenDecayRateIsZero()
+        {
+            const string agentName = "agent";
+            const string goalName = "be confirmed";
+            var agent = _gamygdala.CreateAgent(agentName);
+            _gamygdala.CreateGoalForAgent(agentName, goalName, 1);
+            agent.SetGoalLikelihood(goalName, 1.0);
+
+            for (var i = 0; i < 100; i++) _gamygdala.DecayAll(1000);
+
+            agent.TryGetGoalLikelihood(goalName, out var stored).Should().BeTrue();
+            stored.Value.Should().Be(1.0);
+        }
+
+        /// <summary>
+        ///     End-to-end: after a goal's likelihood decays back toward
+        ///     0.5, the next facilitating belief produces a meaningful
+        ///     delta (and therefore a meaningful emotion intensity)
+        ///     instead of the near-zero delta you'd get from a goal
+        ///     pinned at 1.0. Models the "compliments need ongoing
+        ///     reinforcement" behavior the user asked for.
+        /// </summary>
+        [Fact]
+        public void ProduceMeaningfulDeltaOnNextAppraisal_AfterLikelihoodDecaysBackTowardUnknown()
+        {
+            const string agentName = "agent";
+            const string goalName = "be liked";
+            const double precision = 1e-2;
+            var agent = _gamygdala.CreateAgent(agentName);
+            var decayingGoal = new Goal(goalName, 0.6, isMaintenanceGoal: true, likelihoodDecayRate: 0.05);
+            _gamygdala.RegisterGoal(decayingGoal);
+            agent.AddGoal(decayingGoal);
+
+            // Saturate the goal: belief.likelihood=1, congruence=+1 ->
+            // stored snaps to 1, agent emits Joy with non-trivial
+            // intensity from delta = newLikelihood (no prior).
+            var firstCompliment = new Belief(1, null, new[] { goalName }, new GoalCongruence[] { 1 });
+            _gamygdala.Appraise(firstCompliment, agent);
+            var firstJoy = agent.GetEmotionalState().Single(e => e.Name == EmotionNames.Joy).Intensity.Value;
+
+            // Immediately repeat the same belief: goal is at 1, delta
+            // is now zero, Joy intensity does not increase.
+            _gamygdala.Appraise(firstCompliment, agent);
+            var secondJoy = agent.GetEmotionalState().Single(e => e.Name == EmotionNames.Joy).Intensity.Value;
+            secondJoy.Should().BeApproximately(firstJoy, precision,
+                "the second compliment with no decay in between produces no extra Joy");
+
+            // Now let the likelihood decay back toward 0.5 across many
+            // ticks. Emotion state also decays in parallel; reset it
+            // so we can measure the next appraisal's contribution
+            // cleanly.
+            for (var i = 0; i < 200; i++) _gamygdala.DecayAll(1000);
+            agent.TryGetGoalLikelihood(goalName, out var afterDecay).Should().BeTrue();
+            afterDecay.Value.Should().BeApproximately(0.5, 1e-2);
+
+            // Fire a third compliment. Goal is at 0.5; the new
+            // appraisal's unsnapped newLikelihood = (1*1+1)/2 = 1,
+            // delta = 1 - 0.5 = 0.5, intensity = |0.6 * 0.5| = 0.30.
+            // The certainty-snap saturates the stored value back to
+            // 1, but the returned delta uses the unsnapped value
+            // (matching the Listing 1 / 3 / 4 magnitudes the engine
+            // already pins). Emotion state has fully decayed by
+            // now (exponential factor 0.8^200), so the new Joy
+            // intensity is approximately the per-appraisal
+            // contribution.
+            _gamygdala.Appraise(firstCompliment, agent);
+            var thirdJoy = agent.GetEmotionalState().Single(e => e.Name == EmotionNames.Joy).Intensity.Value;
+            thirdJoy.Should().BeApproximately(0.30, precision,
+                "after decay, a fresh compliment produces a meaningful Joy bump again");
+        }
+
+        /// <summary>
         ///     Per Popescu §3.4.6 the NPC's emotional state decays
         ///     toward a default ("personality-derived") state rather
         ///     than toward zero. The substrate accepts per-emotion

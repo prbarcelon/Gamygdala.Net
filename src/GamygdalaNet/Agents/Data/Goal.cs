@@ -40,16 +40,30 @@ namespace GamygdalaNet.Agents.Data
         ///     called (subsequent appraisals are no-ops). Port-specific feature; the Popescu paper specifies only
         ///     equation 2.
         /// </param>
+        /// <param name="likelihoodDecayRate">
+        ///     Per-tick fraction by which each agent's stored likelihood for this goal glides back toward the
+        ///     "Unknown" prior of 0.5. Default 0 (no decay, paper-faithful). Useful for social-needs goals like
+        ///     "be liked" or "be respected" where a single positive confirmation should not lock the goal at
+        ///     1.0 forever: a small positive rate keeps the goal responsive to fresh validation. Applied by
+        ///     <see cref="Agent.Decay" /> alongside the existing emotion + relation decay. Range [0, 1]; 0
+        ///     leaves the likelihood untouched, 1 jumps to 0.5 in a single tick. Port-specific feature; the
+        ///     Popescu paper does not specify likelihood decay.
+        /// </param>
         public Goal(string name, GoalUtility utility, bool isMaintenanceGoal = false,
-            Func<Likelihood> customLikelihoodCalculation = null)
+            Func<Likelihood> customLikelihoodCalculation = null,
+            double likelihoodDecayRate = 0.0)
         {
             if (string.IsNullOrEmpty(name))
                 throw new ArgumentException($"{nameof(name)} cannot be null or empty.");
+            if (likelihoodDecayRate < 0.0 || likelihoodDecayRate > 1.0)
+                throw new ArgumentOutOfRangeException(nameof(likelihoodDecayRate), likelihoodDecayRate,
+                    $"{nameof(likelihoodDecayRate)} must be in [0, 1].");
 
             Name = name;
             Utility = utility;
             IsMaintenanceGoal = isMaintenanceGoal;
             CustomLikelihoodCalculation = customLikelihoodCalculation;
+            LikelihoodDecayRate = likelihoodDecayRate;
 
             // This is set to false, in which case gamygdala assumes beliefs (events) will be used to calculate the goal
             // likelihood by calculateDeltaLikelihood method. If set to true, instead gamygdala assumes this property
@@ -61,6 +75,7 @@ namespace GamygdalaNet.Agents.Data
         public GoalUtility Utility { get; }
         public bool IsMaintenanceGoal { get; }
         public Func<Likelihood> CustomLikelihoodCalculation { get; }
+        public double LikelihoodDecayRate { get; }
 
         /// <summary>
         ///     Assigned on construction. If false, gamygdala assumes beliefs (game events) will be used to calculate the goal

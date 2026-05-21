@@ -402,6 +402,34 @@ namespace GamygdalaNet.Agents
         {
             _internalState.Decay(gamygdala, _defaultEmotionalState);
             foreach (var relation in _currentRelations) relation.Value.Decay(gamygdala);
+            DecayGoalLikelihoods();
+        }
+
+        /// <summary>
+        ///     Glides each stored goal likelihood back toward the
+        ///     "Unknown" prior (0.5) by the goal's
+        ///     <see cref="Goal.LikelihoodDecayRate" />. Goals without a
+        ///     decay rate (the default) are left alone. Models the
+        ///     intuition that social-needs goals like "be liked" or
+        ///     "be respected" require ongoing reinforcement: a single
+        ///     positive confirmation should not lock the goal at 1.0
+        ///     forever. Port-specific extension; the Popescu paper
+        ///     does not specify likelihood decay.
+        /// </summary>
+        private void DecayGoalLikelihoods()
+        {
+            // Snapshot keys so the in-place mutation below does not
+            // invalidate enumeration.
+            var keys = _goalLikelihoods.Keys.ToArray();
+            foreach (var goalName in keys)
+            {
+                if (!_goals.TryGetValue(goalName, out var goal)) continue;
+                var rate = goal.LikelihoodDecayRate;
+                if (rate <= 0) continue;
+                var current = _goalLikelihoods[goalName];
+                const double UnknownPrior = 0.5;
+                _goalLikelihoods[goalName] = current + rate * (UnknownPrior - current);
+            }
         }
 
         public Relation[] GetRelations()
