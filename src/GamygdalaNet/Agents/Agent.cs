@@ -34,6 +34,7 @@ namespace GamygdalaNet.Agents
 
         private readonly Dictionary<string, Relation> _currentRelations;
         private readonly Dictionary<string, Goal> _goals;
+        private readonly Dictionary<string, double> _goalLikelihoods;
         private readonly Dictionary<string, Emotion> _internalState; // Trading space for lookup speed.
 
         private Gain _gain;
@@ -46,6 +47,7 @@ namespace GamygdalaNet.Agents
         {
             Name = name;
             _goals = new Dictionary<string, Goal>();
+            _goalLikelihoods = new Dictionary<string, double>();
             _currentRelations = new Dictionary<string, Relation>();
             _internalState = new Dictionary<string, Emotion>();
             _gain = 1.0;
