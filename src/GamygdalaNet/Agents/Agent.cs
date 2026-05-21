@@ -104,6 +104,74 @@ namespace GamygdalaNet.Agents
         }
 
         /// <summary>
+        ///     Looks up the agent's per-name <see cref="Goal" /> definition.
+        ///     Used by <see cref="Gamygdala.Appraise(Belief, Agent)" /> to
+        ///     read the agent's private goal template before consulting
+        ///     <see cref="GetGoalLikelihood" /> for the current state.
+        /// </summary>
+        public bool TryGetGoal(string goalName, out Goal goal)
+        {
+            return _goals.TryGetValue(goalName, out goal);
+        }
+
+        /// <summary>
+        ///     Looks up the agent's recorded likelihood for the named
+        ///     goal. Returns false when the agent has not yet
+        ///     appraised any belief against this goal; per Popescu
+        ///     §3.2 line 184 the initial value is "Unknown" rather
+        ///     than a numeric prior, and the engine's first-appraisal
+        ///     delta calculation routes through a different branch
+        ///     when no prior is recorded (returning the
+        ///     post-appraisal likelihood as the delta directly, which
+        ///     matches the magnitudes Popescu pins in Listings 2-4).
+        ///     Existence-based check via the underlying dictionary's
+        ///     ContainsKey; no NaN sentinels.
+        /// </summary>
+        public bool TryGetGoalLikelihood(string goalName, out DoubleZeroToOneInclusive likelihood)
+        {
+            if (string.IsNullOrEmpty(goalName))
+                throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
+
+            if (_goalLikelihoods.TryGetValue(goalName, out var value))
+            {
+                likelihood = new DoubleZeroToOneInclusive(value);
+                return true;
+            }
+
+            likelihood = new DoubleZeroToOneInclusive(0);
+            return false;
+        }
+
+        /// <summary>
+        ///     Records the agent's current likelihood for the named
+        ///     goal. Called by
+        ///     <see cref="Gamygdala.Appraise(Belief, Agent)" /> after
+        ///     calculating the per-belief delta. After this call
+        ///     <see cref="HasGoalLikelihood" /> returns true and
+        ///     <see cref="TryGetGoalLikelihood" /> recovers the
+        ///     stored value.
+        /// </summary>
+        public void SetGoalLikelihood(string goalName, DoubleZeroToOneInclusive likelihood)
+        {
+            if (string.IsNullOrEmpty(goalName))
+                throw new ArgumentException($"{nameof(goalName)} cannot be null or empty.");
+
+            _goalLikelihoods[goalName] = likelihood;
+        }
+
+        /// <summary>
+        ///     True when the agent has recorded any likelihood for
+        ///     the named goal. Distinguishes "never appraised"
+        ///     (returns false) from "appraised, current value happens
+        ///     to be 0.5" (returns true). Existence-based via the
+        ///     underlying dictionary; no NaN sentinels.
+        /// </summary>
+        public bool HasGoalLikelihood(string goalName)
+        {
+            return _goalLikelihoods.ContainsKey(goalName);
+        }
+
+        /// <summary>
         ///     Sets the gain for this agent.
         /// </summary>
         /// <param name="gain">The gain value, from 0 to 20 inclusive.</param>
