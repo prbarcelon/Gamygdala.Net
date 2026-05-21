@@ -307,23 +307,32 @@ namespace GamygdalaNet
                     var affectedGoalName = belief.AffectedGoalNames[i];
                     if (!_goals.ContainsKey(affectedGoalName))
                         continue;
-                    var currentGoal = _goals[affectedGoalName];
-                    var deltaLikelihood = CalculateDeltaLikelihood(currentGoal,
-                        belief.GoalCongruences[i], belief.Likelihood, belief.IsIncremental);
-                    var utility = currentGoal.Utility;
-                    var desirability = deltaLikelihood * utility;
-                    Log(
-                        $"Evaluated goal: {currentGoal.Name}(u={utility.Value:0.00},dL={deltaLikelihood.Value:0.00})");
+                    var goalDefinition = _goals[affectedGoalName];
+                    var utility = goalDefinition.Utility;
 
                     // Now find the owners, and update their emotional states.
+                    // Each owner gets its OWN deltaLikelihood and post-appraisal
+                    // likelihood because the likelihood is per-agent state on
+                    // each owner; the engine's _goals dictionary is the goal
+                    // definition registry, not a likelihood store.
                     var agentsWithGoal = _agents
-                        .Where(x => x.Value.HasGoal(currentGoal.Name))
+                        .Where(x => x.Value.HasGoal(goalDefinition.Name))
                         .Select(x => x.Value);
 
                     foreach (var owner in agentsWithGoal)
                     {
                         Log($"...owned by {owner.Name}");
-                        EvaluateInternalEmotion(utility, deltaLikelihood, currentGoal.Likelihood, owner);
+                        var hasPrior = owner.TryGetGoalLikelihood(goalDefinition.Name,
+                            out var ownerPriorLikelihood);
+                        var (newLikelihood, deltaLikelihood) = CalculateDeltaLikelihood(
+                            goalDefinition, ownerPriorLikelihood, hasPrior,
+                            belief.GoalCongruences[i], belief.Likelihood, belief.IsIncremental);
+                        owner.SetGoalLikelihood(goalDefinition.Name, newLikelihood);
+                        var desirability = deltaLikelihood * utility;
+                        Log(
+                            $"Evaluated goal: {goalDefinition.Name}(u={utility.Value:0.00},dL={deltaLikelihood.Value:0.00})");
+
+                        EvaluateInternalEmotion(utility, deltaLikelihood, newLikelihood, owner);
                         AgentActions(owner.Name, belief.CausalAgentName, owner.Name, desirability, utility,
                             deltaLikelihood);
                         // Now check if anyone has a relation to this goal owner, and update the social emotions accordingly.
@@ -332,7 +341,7 @@ namespace GamygdalaNet
                             {
                                 Log($"{agent.Value.Name} has a relationship with {owner.Name}");
                                 Log(relation);
-                                // The agent has relationship with the goal owner which has nonzero utility, so add relational effects to the relations for agent. 
+                                // The agent has relationship with the goal owner which has nonzero utility, so add relational effects to the relations for agent.
                                 EvaluateSocialEmotion(utility, desirability, deltaLikelihood, relation, agent.Value);
                                 // Also add remorse and gratification if conditions are met within (i.e., agent did something bad/good for owner)
                                 AgentActions(owner.Name, belief.CausalAgentName, agent.Value.Name, desirability,
@@ -347,23 +356,28 @@ namespace GamygdalaNet
             }
             else // TODO - refactor this since there is repeat code.
             {
-                // Check only affectedAgent (which can be much faster)
+                // Check only affectedAgent (which can be much faster). Read
+                // the goal definition from the affected agent's private
+                // template store via TryGetGoal so per-agent goal state
+                // (likelihood) does not leak to other agents through the
+                // engine-global _goals registry.
                 for (var i = 0; i < belief.AffectedGoalNames.Length; i++)
                 {
-                    // Loop through every goal in the list of affected goals by this event.
                     var affectedGoalName = belief.AffectedGoalNames[i];
-                    if (!_goals.ContainsKey(affectedGoalName))
+                    if (!affectedAgent.TryGetGoal(affectedGoalName, out var goalDefinition))
                         continue;
-                    var currentGoal = _goals[affectedGoalName];
-                    var deltaLikelihood = CalculateDeltaLikelihood(currentGoal,
+                    var hasPrior = affectedAgent.TryGetGoalLikelihood(goalDefinition.Name,
+                        out var ownerPriorLikelihood);
+                    var (newLikelihood, deltaLikelihood) = CalculateDeltaLikelihood(
+                        goalDefinition, ownerPriorLikelihood, hasPrior,
                         belief.GoalCongruences[i], belief.Likelihood, belief.IsIncremental);
-                    var utility = currentGoal.Utility;
+                    affectedAgent.SetGoalLikelihood(goalDefinition.Name, newLikelihood);
+                    var utility = goalDefinition.Utility;
                     var desirability = deltaLikelihood * utility;
 
-                    // Assume affectedAgent is the only owner to be considered in this appraisal round.
                     var owner = affectedAgent;
 
-                    EvaluateInternalEmotion(utility, deltaLikelihood, currentGoal.Likelihood, owner);
+                    EvaluateInternalEmotion(utility, deltaLikelihood, newLikelihood, owner);
                     AgentActions(owner.Name, belief.CausalAgentName, owner.Name, desirability, utility,
                         deltaLikelihood);
 
@@ -373,7 +387,7 @@ namespace GamygdalaNet
                         {
                             Log($"{agent.Value.Name} has a relationship with {owner.Name}");
                             Log(relation);
-                            // The agent has relationship with the goal owner which has nonzero utility, so add relational effects to the relations for agent. 
+                            // The agent has relationship with the goal owner which has nonzero utility, so add relational effects to the relations for agent.
                             EvaluateSocialEmotion(utility, desirability, deltaLikelihood, relation, agent.Value);
                             // Also add remorse and gratification if conditions are met within (i.e., agent did something bad/good for owner)
                             AgentActions(owner.Name, belief.CausalAgentName, agent.Value.Name, desirability,
